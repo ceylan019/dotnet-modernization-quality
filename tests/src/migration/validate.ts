@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { diffJson, type Difference } from '../parity/diff';
 import type { Json } from '../parity/normalize';
+import type { OrphanCount } from './evidence';
 import type { ColumnMap, ForeignKey, TableMap } from './mapping';
 import { fetchRows, quoteIdent, type RawRow, type SqlSide } from './sources';
 
@@ -47,7 +48,9 @@ export function formatScaled(n: bigint): string {
   return `${neg ? '-' : ''}${digits.slice(0, -SCALE)}.${digits.slice(-SCALE)}`;
 }
 
-// date -> YYYY-MM-DD; datetime -> YYYY-MM-DDTHH:MM:SS.mmm (fraction cut or padded to milliseconds)
+// date -> YYYY-MM-DD; datetime -> YYYY-MM-DDTHH:MM:SS.uuuuuu. SQL Server datetime has millisecond
+// precision, so its fraction is padded with zeros to microseconds. Extra precision on the target
+// (nonzero digits beyond what the source holds) is kept, so it shows up as a difference.
 function normalizeValue(kind: ColumnMap['kind'], raw: string | null): string | null {
   if (raw === null || raw === undefined) return null;
   switch (kind) {
@@ -62,7 +65,9 @@ function normalizeValue(kind: ColumnMap['kind'], raw: string | null): string | n
     case 'datetime': {
       const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?/.exec(raw);
       if (!m) throw new Error(`Not a datetime: ${raw}`);
-      return `${m[1]}T${m[2]}.${(m[3] ?? '').slice(0, 3).padEnd(3, '0')}`;
+      let frac = m[3] ?? '';
+      if (frac.length > 6 && !/[1-9]/.test(frac.slice(6))) frac = frac.slice(0, 6);
+      return `${m[1]}T${m[2]}.${frac.padEnd(6, '0')}`;
     }
     default:
       return raw;
@@ -110,6 +115,7 @@ function summarize(kind: ColumnMap['kind'], rows: Normalized[], idx: number): { 
   const values = rows.map((r) => r.values[idx] ?? null);
   const present = values.filter((v): v is string => v !== null);
   const out = [{ check: 'nonNull', value: String(present.length) }];
+  // Aggregates are kept for readable diffs; the key-ordered hash catches swapped and compensating changes.
   if (NUMERIC_KINDS.includes(kind)) {
     // int and bool sums use the same scaled arithmetic, so they print with scale 4 too.
     const total = present.reduce((acc, v) => acc + toScaled(v), 0n);
@@ -119,8 +125,8 @@ function summarize(kind: ColumnMap['kind'], rows: Normalized[], idx: number): { 
     out.push({ check: 'minMax', value: present.length ? `${sorted[0]}..${sorted[sorted.length - 1]}` : '' });
   } else if (TEXT_KINDS.includes(kind)) {
     out.push({ check: 'length', value: String(present.reduce((acc, v) => acc + charLength(v), 0)) });
-    out.push({ check: 'sha256', value: sha256(values) });
   }
+  out.push({ check: 'sha256', value: sha256(values) });
   return out;
 }
 
@@ -165,9 +171,9 @@ export async function validateMigration(
   return { tables, ok, examinedRows, durationMs: Date.now() - started };
 }
 
-export async function countOrphans(side: SqlSide, fks: ForeignKey[]): Promise<{ foreignKey: string; orphans: number }[]> {
+export async function countOrphans(side: SqlSide, fks: ForeignKey[]): Promise<OrphanCount[]> {
   const q = (n: string) => quoteIdent(side.dialect, n);
-  const out: { foreignKey: string; orphans: number }[] = [];
+  const out: OrphanCount[] = [];
   for (const fk of fks) {
     const on = fk.columns.map((c, i) => `c.${q(c)} = p.${q(fk.refColumns[i]!)}`).join(' AND ');
     const notNull = fk.columns.map((c) => `c.${q(c)} IS NOT NULL`).join(' AND ');
@@ -175,7 +181,12 @@ export async function countOrphans(side: SqlSide, fks: ForeignKey[]): Promise<{ 
       `SELECT COUNT(*) AS n FROM ${q(fk.table)} c LEFT JOIN ${q(fk.refTable)} p ON ${on} ` +
       `WHERE p.${q(fk.refColumns[0]!)} IS NULL AND ${notNull}`;
     const [row] = await side.query<{ n: string | number }>(text);
-    out.push({ foreignKey: `${fk.table}(${fk.columns.join(', ')}) -> ${fk.refTable}(${fk.refColumns.join(', ')})`, orphans: Number(row?.n ?? 0) });
+    const [child] = await side.query<{ n: string | number }>(`SELECT COUNT(*) AS n FROM ${q(fk.table)}`);
+    out.push({
+      foreignKey: `${fk.table}(${fk.columns.join(', ')}) -> ${fk.refTable}(${fk.refColumns.join(', ')})`,
+      orphans: Number(row?.n ?? 0),
+      childRows: Number(child?.n ?? 0),
+    });
   }
   return out;
 }

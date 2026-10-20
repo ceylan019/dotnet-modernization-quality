@@ -23,7 +23,7 @@ export async function mssqlSide(url: string): Promise<SqlSide> {
 }
 
 export async function postgresSide(url: string): Promise<SqlSide> {
-  const pool = new pg.Pool({ connectionString: url, max: 2 });
+  const pool = new pg.Pool({ connectionString: url, max: 2, options: '-c timezone=UTC' });
   await pool.query('SELECT 1');
   return {
     dialect: 'postgres',
@@ -55,7 +55,7 @@ function selectExpr(dialect: SqlSide['dialect'], kind: ColumnMap['kind'], col: s
       case 'date':
         return `CONVERT(varchar(10), ${c}, 23)`;
       case 'datetime':
-        return `CONVERT(varchar(23), ${c}, 121)`;
+        return `CONVERT(varchar(27), ${c}, 121)`;
       default:
         return `CAST(${c} AS varchar(40))`;
     }
@@ -64,6 +64,9 @@ function selectExpr(dialect: SqlSide['dialect'], kind: ColumnMap['kind'], col: s
     case 'text':
     case 'varchar':
       return c;
+    case 'datetime':
+      // Session time zone is UTC (see postgresSide), so timestamptz prints as UTC.
+      return `to_char(${c}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`;
     case 'bool':
       return `(CASE WHEN ${c} THEN 1 ELSE 0 END)::text`;
     default:

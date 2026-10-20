@@ -4,15 +4,17 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { loadForeignKeys, loadMapping, type ForeignKey, type TableMap } from '../src/migration/mapping';
 import type { SqlSide } from '../src/migration/sources';
+import { evidenceFor, type OrphanCount } from '../src/migration/evidence';
 import { countOrphans, validateMigration } from '../src/migration/validate';
 
 type Row = (string | null)[];
 
-function fake(dialect: SqlSide['dialect'], tables: Record<string, Row[]>, orphans = '0'): SqlSide {
+function fake(dialect: SqlSide['dialect'], tables: Record<string, Row[]>, orphans = '0', childRows = '5'): SqlSide {
   return {
     dialect,
     async query<T>(text: string): Promise<T[]> {
       if (text.includes('LEFT JOIN')) return [{ n: orphans }] as T[];
+      if (text.includes('COUNT(*)')) return [{ n: childRows }] as T[];
       const m = /FROM\s+(\S+)\s*$/.exec(text);
       const name = m![1]!.replace(/[[\]"]/g, '');
       const rows = tables[name];
@@ -147,7 +149,7 @@ it('rejects a source with zero rows as empty evidence', async () => {
 
 it('counts foreign key orphans on the target', async () => {
   const fks: ForeignKey[] = [{ table: 'apps', columns: ['applicant_id'], refTable: 'applicants', refColumns: ['applicant_id'] }];
-  expect(await countOrphans(fake('postgres', {}, '2'), fks)).toEqual([{ foreignKey: 'apps(applicant_id) -> applicants(applicant_id)', orphans: 2 }]);
+  expect(await countOrphans(fake('postgres', {}, '2'), fks)).toEqual([{ foreignKey: 'apps(applicant_id) -> applicants(applicant_id)', orphans: 2, childRows: 5 }]);
 });
 
 it('loads a mapping from a plain array and from an object with foreign keys', () => {
@@ -166,4 +168,67 @@ it('rejects a mapping with a key outside the columns or an unsafe name', () => {
   expect(() => loadMapping(join(dir, 'k.json'))).toThrow(/key column Nope/);
   writeFileSync(join(dir, 'n.json'), JSON.stringify([{ ...mapping[0], source: 'x; DROP TABLE y' }]));
   expect(() => loadMapping(join(dir, 'n.json'))).toThrow(/Invalid mapping/);
+});
+
+it('fails when two rows swap a money value', async () => {
+  const t = base();
+  [t[0]![1], t[1]![1]] = [t[1]![1]!, t[0]![1]!];
+  const report = await run(t);
+  expect(report.ok).toBe(false);
+  expect(failing(report)).toEqual(['Price:sha256']);
+});
+
+it('fails on compensating plus x and minus x changes that keep every sum', async () => {
+  const t = base();
+  t[0]![1] = '89.1234';
+  t[1]![1] = '9.0000';
+  t[0]![2] = '13.50';
+  t[2]![2] = '0.00';
+  t[0]![0] = '1';
+  const report = await run(t);
+  expect(report.ok).toBe(false);
+  expect(failing(report)).toEqual(['Price:sha256', 'Area:sha256']);
+});
+
+it('shows extra datetime precision on the target as a difference', async () => {
+  const t = base();
+  t[0]![6] = '2026-03-08 02:30:00.000123';
+  const report = await run(t);
+  expect(failing(report)).toEqual(['At:minMax', 'At:sha256']);
+});
+
+const goodReport = () => run(base(), { 'dbo.Items': [[1]] });
+const okOrphans: OrphanCount[] = [{ foreignKey: 'a -> b', orphans: 0, childRows: 3 }];
+const byName = (list: ReturnType<typeof evidenceFor>) => Object.fromEntries(list.map((e) => [e.name, e]));
+
+it('evidenceFor passes all four checks for a normal run', async () => {
+  const e = byName(evidenceFor(await goodReport(), okOrphans, 1000));
+  expect(Object.values(e).map((x) => x.passed)).toEqual([true, true, true, true]);
+  expect(e['migration-fk-orphans']!.examined).toBe(3);
+  expect(e['migration-duration']!.examined).toBe(3);
+});
+
+it('evidenceFor never passes on an empty mapping', async () => {
+  const empty = await validateMigration(fake('mssql', {}), fake('postgres', {}), [], {});
+  expect(evidenceFor(empty, okOrphans, 1).map((x) => x.passed)).toEqual([false, false, true, false]);
+});
+
+it('evidenceFor never passes on zero source rows', async () => {
+  const report = await run([], {}, []);
+  const e = byName(evidenceFor(report, okOrphans, 1));
+  expect(e['migration-row-counts']!.passed).toBe(false);
+  expect(e['migration-duration']!.passed).toBe(false);
+});
+
+it('evidenceFor fails the orphan check with zero foreign keys, empty child tables or orphans', async () => {
+  const report = await goodReport();
+  expect(byName(evidenceFor(report, [], 1))['migration-fk-orphans']!.passed).toBe(false);
+  expect(byName(evidenceFor(report, [{ foreignKey: 'a -> b', orphans: 0, childRows: 0 }], 1))['migration-fk-orphans']!.passed).toBe(false);
+  expect(byName(evidenceFor(report, [{ foreignKey: 'a -> b', orphans: 1, childRows: 4 }], 1))['migration-fk-orphans']!.passed).toBe(false);
+});
+
+it('evidenceFor fails the column check without probes and the duration check over ten minutes', async () => {
+  const noProbes = await run(base());
+  expect(byName(evidenceFor(noProbes, okOrphans, 1))['migration-column-checks']!.passed).toBe(false);
+  expect(byName(evidenceFor(await goodReport(), okOrphans, 600_001))['migration-duration']!.passed).toBe(false);
 });

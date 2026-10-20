@@ -101,4 +101,5 @@ it('validates SQL Server against PostgreSQL, then fails after one altered value'
   await pgPool.query(`UPDATE mig_items_validate SET name = 'Trail' WHERE id = 1`);
   const bad = await validateMigration(source, pgSide, [pgMapping], {});
   expect(bad.ok).toBe(false);
+  expect(bad.tables[0]!.columns.filter((c) => !c.ok).map((c) => `${c.column}:${c.check}`)).toEqual(['Name:length', 'Name:sha256']);
 });
