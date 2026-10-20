@@ -55,17 +55,26 @@ mutation ChangeStatus($referenceNumber: String!, $newStatus: ApplicationStatus!,
   }
 }`;
 
+// Complete enough for graphql-js buildClientSchema: interfaces, possible types, default values,
+// directives and deprecated members (a deprecated field is still part of the contract).
 export const INTROSPECTION = `
 query Introspection {
   __schema {
     queryType { name }
     mutationType { name }
-    types {
-      kind
-      name
-      fields { name args { name type { kind name ofType { kind name ofType { kind name } } } } type { kind name ofType { kind name ofType { kind name } } } }
-      inputFields { name type { kind name ofType { kind name ofType { kind name } } } }
-      enumValues { name }
-    }
+    subscriptionType { name }
+    types { ...FullType }
+    directives { name locations args { ...InputValue } }
   }
-}`;
+}
+fragment FullType on __Type {
+  kind
+  name
+  fields(includeDeprecated: true) { name args { ...InputValue } type { ...TypeRef } isDeprecated deprecationReason }
+  inputFields { ...InputValue }
+  interfaces { ...TypeRef }
+  enumValues(includeDeprecated: true) { name isDeprecated deprecationReason }
+  possibleTypes { ...TypeRef }
+}
+fragment InputValue on __InputValue { name type { ...TypeRef } defaultValue }
+fragment TypeRef on __Type { kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name } } } } }`;

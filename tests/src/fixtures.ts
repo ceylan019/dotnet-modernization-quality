@@ -1,11 +1,15 @@
 import { test as base, expect } from '@playwright/test';
 import { GraphQLClient } from './api/graphql-client';
 import { loadEnv, type TestEnv } from './config/env';
+import { createLegacyDriver } from './drivers/legacy/index';
+import { createModernDriver } from './drivers/modern/index';
+import type { AppDriver } from './drivers/types';
 
 interface Fixtures {
   env: TestEnv;
   gql: GraphQLClient;
   consoleErrors: string[];
+  app: AppDriver;
 }
 
 export const test = base.extend<Fixtures>({
@@ -23,6 +27,9 @@ export const test = base.extend<Fixtures>({
     });
     page.on('pageerror', (err) => errors.push(err.message));
     await use(errors);
+  },
+  app: async ({ page, env }, use) => {
+    await use(env.target === 'legacy' ? createLegacyDriver(page) : createModernDriver(page));
   },
 });
 
