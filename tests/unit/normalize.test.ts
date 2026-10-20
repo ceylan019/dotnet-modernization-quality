@@ -4,13 +4,13 @@ import { normalizeResponse, normalizeValues, type Json } from '../src/parity/nor
 
 // normalizeResponse is typed as Json but always returns this object shape.
 const norm = (...a: Parameters<typeof normalizeResponse>) =>
-  normalizeResponse(...a) as { status: number; data: Json; errors: Json };
+  normalizeResponse(...a) as { status: number; data?: Json; errors?: Json };
 const ok = (data: unknown, extra: Record<string, unknown> = {}) => ({ status: 200, body: { data, ...extra } });
 
 it('keeps a leading space in a value, so " Roy" differs from "Roy"', () => {
   const a = norm(ok({ name: ' Roy' }));
   const b = norm(ok({ name: 'Roy' }));
-  expect(a).toEqual({ status: 200, data: { name: ' Roy' }, errors: [] });
+  expect(a).toEqual({ status: 200, data: { name: ' Roy' } });
   expect(diffJson(b, a)).toEqual([{ path: '$.data.name', kind: 'changed', expected: 'Roy', actual: ' Roy' }]);
 });
 
@@ -39,9 +39,9 @@ it('keeps array order so reordered arrays produce changed differences', () => {
   ]);
 });
 
-it('sorts object keys at every depth', () => {
+it('sorts keys of data objects, including objects inside arrays', () => {
   const r = norm(ok({ b: 1, a: { d: 1, c: [{ z: 1, y: 2 }] } }));
-  expect(Object.keys(r)).toEqual(['status', 'data', 'errors']);
+  expect(Object.keys(r)).toEqual(['data', 'status']);
   const data = r.data as Record<string, unknown>;
   expect(Object.keys(data)).toEqual(['a', 'b']);
   const a = data.a as Record<string, unknown>;
@@ -66,20 +66,14 @@ it('reduces an error to the first line of its message and its path', () => {
   });
 });
 
-it('handles CRLF in the first line and an error without a path', () => {
+it('handles CRLF in the first line and leaves out an absent path', () => {
   const r = norm({ status: 200, body: { errors: [{ message: 'Boom \r\nstack' }] } });
-  expect(r.errors).toEqual([{ message: 'Boom ', path: null }]);
+  expect(r.errors).toEqual([{ message: 'Boom ' }]);
 });
 
 it('does not trim the first line of an error message', () => {
   const r = norm({ status: 200, body: { errors: [{ message: '  padded  ' }] } });
-  expect(r.errors).toEqual([{ message: '  padded  ', path: null }]);
-});
-
-it('reports data null and no errors for a non-object body', () => {
-  expect(norm({ status: 502, body: 'Bad gateway' })).toEqual({ status: 502, data: null, errors: [] });
-  expect(norm({ status: 500, body: null })).toEqual({ status: 500, data: null, errors: [] });
-  expect(norm({ status: 500, body: [1] })).toEqual({ status: 500, data: null, errors: [] });
+  expect(r.errors).toEqual([{ message: '  padded  ' }]);
 });
 
 it('replaces a valid reference number at a volatile path', () => {
@@ -102,7 +96,7 @@ it('flags non-string values at a volatile path', () => {
 it('replaces valid ISO timestamps and flags others', () => {
   const v = { t: 'timestamp' } as const;
   for (const good of ['2026-10-15T10:20:30Z', '2026-10-15T10:20:30.123Z', '2026-10-15T10:20:30+02:00', '2026-10-15T10:20:30', '2026-10-15T10:20:30.1234567']) {
-    expect(norm(ok({ t: good }), v).data).toEqual({ t: '<timestamp>' });
+    expect(norm(ok({ t: good }), v).data).toEqual({ t: `<timestamp ${good.replace(/\d/g, 'd')}>` });
   }
   for (const bad of ['2026-10-15', 'yesterday', '2026-13-15T10:20:30Z', '2026-10-15T25:20:30Z', ' 2026-10-15T10:20:30Z', '2026-10-15T10:20:30Z ', '15/10/2026 10:20', 'x2026-10-15T10:20:30Z']) {
     expect(norm(ok({ t: bad }), v).data).toEqual({ t: `<invalid timestamp: ${bad}>` });
@@ -115,12 +109,12 @@ it('supports [*] for array items and nested wildcards', () => {
   expect(r.data).toEqual({
     keep: 'PRM-2026-000009',
     permits: [
-      { at: '<timestamp>', other: 'a', ref: '<referenceNumber>' },
+      { at: '<timestamp dddd-dd-ddTdd:dd:ddZ>', other: 'a', ref: '<referenceNumber>' },
       { at: '<invalid timestamp: nope>', other: 'b', ref: '<referenceNumber>' },
     ],
   });
   const nested = norm(ok({ g: [[{ t: '2026-10-15T00:00:00Z' }]] }), { 'g[*][*].t': 'timestamp' });
-  expect(nested.data).toEqual({ g: [[{ t: '<timestamp>' }]] });
+  expect(nested.data).toEqual({ g: [[{ t: '<timestamp dddd-dd-ddTdd:dd:ddZ>' }]] });
 });
 
 it('ignores volatile paths that are absent or hit the wrong shape', () => {
@@ -155,28 +149,106 @@ it('rejects impossible calendar dates and out of range times in timestamps', () 
     expect(norm(ok({ t: bad }), v).data).toEqual({ t: `<invalid timestamp: ${bad}>` });
   }
   for (const good of ['2028-02-29T10:00:00Z', '2026-10-31T23:59:59-05:30', '2026-01-01T00:00:00']) {
-    expect(norm(ok({ t: good }), v).data).toEqual({ t: '<timestamp>' });
+    expect(norm(ok({ t: good }), v).data).toEqual({ t: `<timestamp ${good.replace(/\d/g, 'd')}>` });
   }
 });
 
 it('supports a leading [*] on array data', () => {
   const r = norm(ok([{ t: '2026-10-15T00:00:00Z' }, { t: 'x' }]), { '[*].t': 'timestamp' });
-  expect(r.data).toEqual([{ t: '<timestamp>' }, { t: '<invalid timestamp: x>' }]);
+  expect(r.data).toEqual([{ t: '<timestamp dddd-dd-ddTdd:dd:ddZ>' }, { t: '<invalid timestamp: x>' }]);
 });
 
-it('uses an empty message when an error has none', () => {
-  expect(norm({ status: 200, body: { errors: [{}, null] } }).errors).toEqual([
-    { message: '', path: null },
-    { message: '', path: null },
-  ]);
-});
-
-it('ignores data and errors on a string or array body', () => {
-  expect(norm({ status: 200, body: 'data' })).toEqual({ status: 200, data: null, errors: [] });
-  expect(norm({ status: 200, body: undefined })).toEqual({ status: 200, data: null, errors: [] });
-});
-
-it('sorts keys inside error paths', () => {
+it('keeps error path segments as they are', () => {
   const r = norm({ status: 200, body: { errors: [{ message: 'x', path: ['a', 1] }] } });
   expect(r.errors).toEqual([{ message: 'x', path: ['a', 1] }]);
+});
+
+it('shows a non-object body instead of treating it as an empty response', () => {
+  expect(normalizeResponse({ status: 502, body: null, raw: '<html>Bad gateway</html>' })).toEqual({ status: 502, data: '<non-object body: <html>Bad gateway</html>>' });
+  expect(normalizeResponse({ status: 500, body: null })).toEqual({ status: 500, data: '<non-object body: null>' });
+  expect(normalizeResponse({ status: 500, body: [1] })).toEqual({ status: 500, data: '<non-object body: [1]>' });
+  expect(normalizeResponse({ status: 200, body: 'data' })).toEqual({ status: 200, data: '<non-object body: "data">' });
+  expect(normalizeResponse({ status: 200, body: undefined })).toEqual({ status: 200, data: '<non-object body: undefined>' });
+});
+
+it('keeps only the first 200 characters of a non-object body', () => {
+  const r = normalizeResponse({ status: 500, body: null, raw: 'x'.repeat(500) }) as { data: string };
+  expect(r.data).toBe(`<non-object body: ${'x'.repeat(200)}>`);
+});
+
+it('does not let a non-object body equal a real empty response', () => {
+  const html = normalizeResponse({ status: 200, body: null, raw: '<html/>' });
+  const empty = normalizeResponse({ status: 200, body: { data: null } });
+  expect(diffJson(empty, html).length).toBeGreaterThan(0);
+});
+
+it('keeps absent, null and empty distinct for data and errors', () => {
+  const absent = normalizeResponse({ status: 200, body: {} });
+  const nulls = normalizeResponse({ status: 200, body: { data: null, errors: null } });
+  const empty = normalizeResponse({ status: 200, body: { data: {}, errors: [] } });
+  expect(absent).toEqual({ status: 200 });
+  expect(nulls).toEqual({ data: null, errors: '<invalid errors: null>', status: 200 });
+  expect(empty).toEqual({ data: {}, errors: [], status: 200 });
+  expect(diffJson(absent, normalizeResponse({ status: 200, body: { data: null } }))).toEqual([{ path: '$.data', kind: 'added', actual: null }]);
+  expect(diffJson(absent, normalizeResponse({ status: 200, body: { errors: [] } }))).toEqual([{ path: '$.errors', kind: 'added', actual: [] }]);
+  expect(diffJson(normalizeResponse({ status: 200, body: { errors: [] } }), nulls)[0]?.kind).toBe('type');
+});
+
+it('shows a present but non-array errors value', () => {
+  expect(normalizeResponse({ status: 200, body: { errors: 'boom' } })).toEqual({ errors: '<invalid errors: "boom">', status: 200 });
+  expect(normalizeResponse({ status: 200, body: { errors: { message: 'x' } } })).toEqual({ errors: '<invalid errors: {"message":"x"}>', status: 200 });
+});
+
+it('shows an error entry that is not an object', () => {
+  const r = normalizeResponse({ status: 200, body: { errors: ['boom', null, [1]] } }) as { errors: unknown };
+  expect(r.errors).toEqual(['<invalid error: "boom">', '<invalid error: null>', '<invalid error: [1]>']);
+});
+
+it('does not coerce a non-string message, and a missing message differs from an empty one', () => {
+  const num = normalizeResponse({ status: 200, body: { errors: [{ message: 123 }] } });
+  const str = normalizeResponse({ status: 200, body: { errors: [{ message: '123' }] } });
+  expect(num).toEqual({ errors: [{ message: '<invalid message: 123>' }], status: 200 });
+  expect(diffJson(str, num)).toHaveLength(1);
+  const missing = normalizeResponse({ status: 200, body: { errors: [{}] } });
+  const empty = normalizeResponse({ status: 200, body: { errors: [{ message: '' }] } });
+  expect(missing).toEqual({ errors: [{}], status: 200 });
+  expect(diffJson(missing, empty)).toEqual([{ path: '$.errors[0].message', kind: 'added', actual: '' }]);
+  expect(normalizeResponse({ status: 200, body: { errors: [{ message: null }] } })).toEqual({ errors: [{ message: '<invalid message: null>' }], status: 200 });
+});
+
+it('keeps offset and fractional precision visible through the timestamp placeholder', () => {
+  const v = { t: 'timestamp' } as const;
+  const n = (t: string) => normalizeResponse(ok({ t }), v);
+  expect(n('2026-10-20T05:35:12.123+00:00')).toEqual({ data: { t: '<timestamp dddd-dd-ddTdd:dd:dd.ddd+dd:dd>' }, status: 200 });
+  expect(diffJson(n('2026-10-20T05:35:12Z'), n('2026-10-20T05:35:12'))).toHaveLength(1);
+  expect(diffJson(n('2026-10-20T05:35:12Z'), n('2026-10-20T05:35:12+00:00'))).toHaveLength(1);
+  expect(diffJson(n('2026-10-20T05:35:12.123Z'), n('2026-10-20T05:35:12.1234567Z'))).toHaveLength(1);
+  expect(diffJson(n('2026-10-20T05:35:12Z'), n('2026-10-20T05:35:12.000Z'))).toHaveLength(1);
+  expect(diffJson(n('2026-10-20T05:35:12.123Z'), n('2031-01-02T23:01:59.987Z'))).toEqual([]);
+});
+
+it('keeps keys named like Object.prototype members, including __proto__', () => {
+  const body = JSON.parse('{"data":{"__proto__":{"x":1},"constructor":"c","toString":"t","a":1}}');
+  const r = normalizeResponse({ status: 200, body }) as { data: Record<string, unknown> };
+  expect(Object.keys(r.data)).toEqual(['__proto__', 'a', 'constructor', 'toString']);
+  expect(Object.getPrototypeOf(r.data)).toBe(Object.prototype);
+  expect(JSON.stringify(r.data)).toBe('{"__proto__":{"x":1},"a":1,"constructor":"c","toString":"t"}');
+});
+
+it('masks a volatile key named like an Object.prototype member only when it is an own key', () => {
+  const v = { constructor: 'referenceNumber' } as const;
+  expect(norm(ok({ a: 1 }), v).data).toEqual({ a: 1 });
+  expect(norm(ok({ constructor: 'PRM-2026-000001' }), v).data).toEqual({ constructor: '<referenceNumber>' });
+});
+
+it('applies each volatile kind only to its own format', () => {
+  expect(norm(ok({ v: 'PRM-2026-000001' }), { v: 'timestamp' }).data).toEqual({ v: '<invalid timestamp: PRM-2026-000001>' });
+  expect(norm(ok({ v: '2026-10-15T00:00:00Z' }), { v: 'referenceNumber' }).data).toEqual({ v: '<invalid referenceNumber: 2026-10-15T00:00:00Z>' });
+});
+
+it('leaves the path key out of an error that has none and keeps one that is null', () => {
+  const none = norm({ status: 200, body: { errors: [{ message: 'x' }] } }).errors as Record<string, unknown>[];
+  expect(Object.keys(none[0]!)).toEqual(['message']);
+  const nul = norm({ status: 200, body: { errors: [{ message: 'x', path: null }] } }).errors as Record<string, unknown>[];
+  expect(Object.keys(nul[0]!)).toEqual(['message', 'path']);
 });

@@ -84,3 +84,26 @@ it('reports an empty array against an empty object as type', () => {
   expect(diffJson([], {})[0]?.kind).toBe('type');
   expect(diffJson({}, [])[0]?.kind).toBe('type');
 });
+
+it('compares keys named like Object.prototype members', () => {
+  const o = (json: string) => JSON.parse(json);
+  expect(diffJson(o('{"constructor":1}'), o('{}'))).toEqual([{ path: '$.constructor', kind: 'missing', expected: 1 }]);
+  expect(diffJson(o('{}'), o('{"toString":1}'))).toEqual([{ path: '$.toString', kind: 'added', actual: 1 }]);
+  expect(diffJson(o('{"__proto__":1}'), o('{"__proto__":2}'))).toEqual([{ path: '$.__proto__', kind: 'changed', expected: 1, actual: 2 }]);
+  expect(diffJson(o('{"__proto__":1}'), o('{}'))).toEqual([{ path: '$.__proto__', kind: 'missing', expected: 1 }]);
+});
+
+it('quotes keys that would make a path ambiguous', () => {
+  expect(diffJson({ 'a.b': 1 }, { 'a.b': 2 })[0]?.path).toBe('$["a.b"]');
+  expect(diffJson({ a: { b: 1 } }, { a: { b: 2 } })[0]?.path).toBe('$.a.b');
+  expect(diffJson({ 'a[0]': 1 }, { 'a[0]': 2 })[0]?.path).toBe('$["a[0]"]');
+  expect(diffJson({ '': 1 }, { '': 2 })[0]?.path).toBe('$[""]');
+  expect(diffJson({ 'x y': 1 }, {})[0]?.path).toBe('$["x y"]');
+  expect(diffJson({}, { 'q"t': 1 })[0]?.path).toBe('$["q\\"t"]');
+  expect(diffJson({ k: { 'a.b': [1] } }, { k: { 'a.b': [2] } })[0]?.path).toBe('$.k["a.b"][0]');
+});
+
+it('keeps plain keys with digits, underscores, dollars and hyphens unquoted', () => {
+  expect(diffJson({ a_1: 1, $x: 1, 'k-1': 1, '0': 1 }, { a_1: 2, $x: 2, 'k-1': 2, '0': 2 }).map((d) => d.path))
+    .toEqual(['$.0', '$.a_1', '$.$x', '$.k-1']);
+});

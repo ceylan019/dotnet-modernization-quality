@@ -15,6 +15,11 @@ function shapeOf(v: Json): Shape {
   return typeof v as Shape;
 }
 
+// Plain keys read as `.key`; keys that would make the path ambiguous are quoted as `["a.b"]`.
+function keyPath(path: string, key: string): string {
+  return /^[A-Za-z0-9_$-]+$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`;
+}
+
 export function diffJson(expected: Json, actual: Json, path = '$'): Difference[] {
   const se = shapeOf(expected);
   if (se !== shapeOf(actual)) return [{ path, kind: 'type', expected, actual }];
@@ -36,12 +41,12 @@ export function diffJson(expected: Json, actual: Json, path = '$'): Difference[]
     const a = actual as { [k: string]: Json };
     const out: Difference[] = [];
     for (const key of Object.keys(e)) {
-      const p = `${path}.${key}`;
-      if (!(key in a)) out.push({ path: p, kind: 'missing', expected: e[key]! });
+      const p = keyPath(path, key);
+      if (!Object.hasOwn(a, key)) out.push({ path: p, kind: 'missing', expected: e[key]! });
       else out.push(...diffJson(e[key]!, a[key]!, p));
     }
     for (const key of Object.keys(a)) {
-      if (!(key in e)) out.push({ path: `${path}.${key}`, kind: 'added', actual: a[key]! });
+      if (!Object.hasOwn(e, key)) out.push({ path: keyPath(path, key), kind: 'added', actual: a[key]! });
     }
     return out;
   }

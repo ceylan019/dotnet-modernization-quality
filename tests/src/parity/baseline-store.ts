@@ -13,7 +13,8 @@ export interface BaselineCase {
   recordedAt: string;
 }
 
-const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// Kebab case, dots allowed for numbers such as fee-reno-10.70-senior.
+const NAME = /^[a-z0-9][a-z0-9.-]*$/;
 
 const jsonSchema: z.ZodType<Json> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number(), z.string(), z.array(jsonSchema), z.record(z.string(), jsonSchema),

@@ -40,9 +40,9 @@ it('overwrites an existing case', () => {
   expect(readBaselineCase('fee', 'fee-reno-10.70-senior', root)?.request).toEqual({ a: 2 });
 });
 
-it('rejects names that could escape the root', () => {
+it('rejects names that are not kebab case or could escape the root', () => {
   const root = tmp();
-  for (const bad of ['', '..', '../x', 'a/b', 'a\\b', '.hidden', 'a b', '-x']) {
+  for (const bad of ['', '..', '../x', 'a/b', 'a\\b', '.hidden', 'a b', '-x', 'Fee', 'a_b', 'fee.RENO']) {
     expect(() => writeBaselineCase(sample({ caseId: bad }), root)).toThrow(/caseId/);
     expect(() => writeBaselineCase(sample({ suite: bad }), root)).toThrow(/suite/);
     expect(() => readBaselineCase(bad, 'x', root)).toThrow(/suite/);
@@ -80,14 +80,32 @@ it('uses BASELINES_DIR when set and the tests/baselines/legacy folder otherwise'
   expect(baselinesRoot({ BASELINES_DIR: '' })).toMatch(/\/baselines\/legacy$/);
 });
 
-// expectParity
+
+interface RunOptions { mode: 'compare' | 'record'; root: string; approved: ApprovedDifference[] }
+
+// expectParity takes no options, so tests drive it the way a real run does: through the environment.
+function parity(info: TestInfo, args: Parameters<typeof expectParity>[1], o: RunOptions): void {
+  const file = join(tmp(), 'ad.json');
+  writeFileSync(file, JSON.stringify(o.approved));
+  const saved = { ...process.env };
+  try {
+    Object.assign(process.env, {
+      TARGET: 'legacy', BASE_URL: 'http://localhost:8081', PARITY_MODE: o.mode,
+      BASELINES_DIR: o.root, APPROVED_DIFFERENCES_FILE: file,
+    });
+    expectParity(info, args);
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
+}
 
 const base = { suite: 'fee', caseId: 'fee-reno-10.70-senior', risks: ['RISK-FEE-01'], request: { a: 1 } as const };
 const actualOk = { status: 200, data: { fee: 174.67 }, errors: [] };
 
 it('compare mode with no baseline file throws and names the case', () => {
   const root = tmp();
-  expect(() => expectParity(fakeInfo(), { ...base, actual: actualOk }, { mode: 'compare', root, approved: [] }))
+  expect(() => parity(fakeInfo(), { ...base, actual: actualOk }, { mode: 'compare', root, approved: [] }))
     .toThrow('No legacy baseline for fee/fee-reno-10.70-senior');
 });
 
@@ -95,7 +113,7 @@ it('compare mode passes on equal output and annotates parity=1', () => {
   const root = tmp();
   writeBaselineCase(sample(), root);
   const info = fakeInfo();
-  expectParity(info, { ...base, actual: actualOk }, { mode: 'compare', root, approved: [] });
+  parity(info, { ...base, actual: actualOk }, { mode: 'compare', root, approved: [] });
   expect(info.annotations).toEqual([{ type: 'evidence', description: 'parity=1' }]);
 });
 
@@ -103,14 +121,14 @@ it('compare mode fails listing each remaining difference', () => {
   const root = tmp();
   writeBaselineCase(sample(), root);
   const actual = { status: 200, data: { fee: '174.67' }, errors: [] };
-  expect(() => expectParity(fakeInfo(), { ...base, actual }, { mode: 'compare', root, approved: [] }))
+  expect(() => parity(fakeInfo(), { ...base, actual }, { mode: 'compare', root, approved: [] }))
     .toThrow(/fee\/fee-reno-10\.70-senior[\s\S]*\$\.data\.fee[\s\S]*type[\s\S]*174\.67/);
 });
 
 it('compare mode fails when the request differs from the recorded request', () => {
   const root = tmp();
   writeBaselineCase(sample(), root);
-  expect(() => expectParity(fakeInfo(), { ...base, request: { a: 2 }, actual: actualOk }, { mode: 'compare', root, approved: [] }))
+  expect(() => parity(fakeInfo(), { ...base, request: { a: 2 }, actual: actualOk }, { mode: 'compare', root, approved: [] }))
     .toThrow(/request/i);
 });
 
@@ -119,7 +137,7 @@ it('compare mode applies approved differences and annotates them', () => {
   writeBaselineCase(sample(), root);
   const approved: ApprovedDifference[] = [{ id: 'AD-007', suite: 'fee', caseId: '*', path: '$.data.fee', reason: 'r', approvedBy: 'o', approvedOn: '2026-11-02' }];
   const info = fakeInfo();
-  expectParity(info, { ...base, actual: { status: 200, data: { fee: 1 }, errors: [] } }, { mode: 'compare', root, approved });
+  parity(info, { ...base, actual: { status: 200, data: { fee: 1 }, errors: [] } }, { mode: 'compare', root, approved });
   expect(info.annotations).toEqual([
     { type: 'evidence', description: 'parity=1' },
     { type: 'approved-difference', description: 'AD-007' },
@@ -131,7 +149,7 @@ it('compare mode still fails on differences that are not approved', () => {
   writeBaselineCase(sample(), root);
   const approved: ApprovedDifference[] = [{ id: 'AD-007', suite: 'fee', caseId: '*', path: '$.data.fee', reason: 'r', approvedBy: 'o', approvedOn: '2026-11-02' }];
   const info = fakeInfo();
-  expect(() => expectParity(info, { ...base, actual: { status: 500, data: { fee: 1 }, errors: [] } }, { mode: 'compare', root, approved }))
+  expect(() => parity(info, { ...base, actual: { status: 500, data: { fee: 1 }, errors: [] } }, { mode: 'compare', root, approved }))
     .toThrow(/\$\.status/);
   expect(info.annotations.map((a) => a.description)).toContain('AD-007');
 });
@@ -140,36 +158,19 @@ it('record mode writes the case with risks, request, normalized and an ISO recor
   const root = tmp();
   const info = fakeInfo();
   const before = Date.now();
-  expectParity(info, { ...base, actual: actualOk }, { mode: 'record', root, approved: [] });
+  parity(info, { ...base, actual: actualOk }, { mode: 'record', root, approved: [] });
   const stored = readBaselineCase('fee', 'fee-reno-10.70-senior', root)!;
   expect(stored).toMatchObject({ suite: 'fee', caseId: 'fee-reno-10.70-senior', risks: ['RISK-FEE-01'], request: { a: 1 }, normalized: actualOk });
   expect(new Date(stored.recordedAt).toISOString()).toBe(stored.recordedAt);
   expect(Date.parse(stored.recordedAt)).toBeGreaterThanOrEqual(before - 1000);
-  expect(info.annotations).toEqual([{ type: 'evidence', description: 'parity=1' }]);
+  expect(info.annotations).toEqual([{ type: 'baseline-recorded', description: 'fee/fee-reno-10.70-senior' }]);
 });
 
 it('record mode does not read or require an existing baseline and never throws on differences', () => {
   const root = tmp();
   writeBaselineCase(sample(), root);
-  expectParity(fakeInfo(), { ...base, actual: { status: 500, data: null, errors: [] } }, { mode: 'record', root, approved: [] });
+  parity(fakeInfo(), { ...base, actual: { status: 500, data: null, errors: [] } }, { mode: 'record', root, approved: [] });
   expect(readBaselineCase('fee', 'fee-reno-10.70-senior', root)?.normalized).toEqual({ status: 500, data: null, errors: [] });
-});
-
-it('defaults the mode to PARITY_MODE from the environment', () => {
-  const root = tmp();
-  const saved = { ...process.env };
-  try {
-    process.env.TARGET = 'legacy';
-    process.env.BASE_URL = 'http://localhost:8081';
-    process.env.PARITY_MODE = 'record';
-    expectParity(fakeInfo(), { ...base, actual: actualOk }, { root, approved: [] });
-    expect(readBaselineCase('fee', 'fee-reno-10.70-senior', root)).toBeDefined();
-    process.env.PARITY_MODE = 'compare';
-    process.env.BASELINES_DIR = tmp();
-    expect(() => expectParity(fakeInfo(), { ...base, actual: actualOk }, { approved: [] })).toThrow(/No legacy baseline/);
-  } finally {
-    process.env = saved;
-  }
 });
 
 it('only treats a missing file as no baseline, other read errors surface', () => {
@@ -202,7 +203,7 @@ it('describes a type difference with both values on one line', () => {
   const root = tmp();
   writeBaselineCase(sample(), root);
   const actual = { status: 200, data: { fee: '174.67' }, errors: [] };
-  expect(() => expectParity(fakeInfo(), { ...base, actual }, { mode: 'compare', root, approved: [] })).toThrow(
+  expect(() => parity(fakeInfo(), { ...base, actual }, { mode: 'compare', root, approved: [] })).toThrow(
     'Parity failed for fee/fee-reno-10.70-senior, 1 difference(s):\n$.data.fee (type) expected 174.67 actual "174.67"',
   );
 });
@@ -211,7 +212,7 @@ it('describes missing and added keys with only the value that exists', () => {
   const root = tmp();
   writeBaselineCase(sample(), root);
   const actual = { status: 200, data: { extra: 1 }, errors: [] };
-  expect(() => expectParity(fakeInfo(), { ...base, actual }, { mode: 'compare', root, approved: [] })).toThrow(
+  expect(() => parity(fakeInfo(), { ...base, actual }, { mode: 'compare', root, approved: [] })).toThrow(
     'Parity failed for fee/fee-reno-10.70-senior, 2 difference(s):\n$.data.fee (missing) expected 174.67\n$.data.extra (added) actual 1',
   );
 });
@@ -219,7 +220,7 @@ it('describes missing and added keys with only the value that exists', () => {
 it('describes a request mismatch with the request path', () => {
   const root = tmp();
   writeBaselineCase(sample(), root);
-  expect(() => expectParity(fakeInfo(), { ...base, request: { a: 2 }, actual: actualOk }, { mode: 'compare', root, approved: [] })).toThrow(
+  expect(() => parity(fakeInfo(), { ...base, request: { a: 2 }, actual: actualOk }, { mode: 'compare', root, approved: [] })).toThrow(
     'Request for fee/fee-reno-10.70-senior differs from the recorded request, re-record the baseline:\n$request.a (changed) expected 1 actual 2',
   );
 });
@@ -227,7 +228,43 @@ it('describes a request mismatch with the request path', () => {
 it('lists every request difference on its own line', () => {
   const root = tmp();
   writeBaselineCase(sample({ request: { a: 1, b: 1 } }), root);
-  expect(() => expectParity(fakeInfo(), { ...base, request: { a: 2, b: 2 }, actual: actualOk }, { mode: 'compare', root, approved: [] })).toThrow(
+  expect(() => parity(fakeInfo(), { ...base, request: { a: 2, b: 2 }, actual: actualOk }, { mode: 'compare', root, approved: [] })).toThrow(
     '$request.a (changed) expected 1 actual 2\n$request.b (changed) expected 1 actual 2',
   );
+});
+
+it('record mode never claims parity evidence, and compare mode always does', () => {
+  const root = tmp();
+  const rec = fakeInfo();
+  parity(rec, { ...base, actual: actualOk }, { mode: 'record', root, approved: [] });
+  expect(rec.annotations.map((a) => a.type)).toEqual(['baseline-recorded']);
+  const cmp = fakeInfo();
+  parity(cmp, { ...base, actual: actualOk }, { mode: 'compare', root, approved: [] });
+  expect(cmp.annotations.map((a) => a.type)).toEqual(['evidence']);
+});
+
+it('refuses to record from a non-legacy target even though the mode asks for it', () => {
+  const saved = { ...process.env };
+  try {
+    Object.assign(process.env, { TARGET: 'modern', BASE_URL: 'http://localhost:8082', PARITY_MODE: 'record', BASELINES_DIR: tmp() });
+    expect(() => expectParity(fakeInfo(), { ...base, actual: actualOk })).toThrow(/only be recorded from the legacy app/);
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
+});
+
+it('uses the committed approved differences file when APPROVED_DIFFERENCES_FILE is not set', () => {
+  const root = tmp();
+  writeBaselineCase(sample(), root);
+  const saved = { ...process.env };
+  try {
+    Object.assign(process.env, { TARGET: 'legacy', BASE_URL: 'http://localhost:8081', PARITY_MODE: 'compare', BASELINES_DIR: root });
+    delete process.env.APPROVED_DIFFERENCES_FILE;
+    expectParity(fakeInfo(), { ...base, actual: actualOk });
+    expect(() => expectParity(fakeInfo(), { ...base, actual: { status: 500, data: null, errors: [] } })).toThrow(/\$\.status/);
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
 });

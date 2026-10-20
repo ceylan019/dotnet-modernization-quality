@@ -19,3 +19,6 @@ tests/allure-report/
 # Tool scratch space
 .superpowers/
 .DS_Store
+
+# Stryker runner artifacts
+tests/stryker-setup-*.js

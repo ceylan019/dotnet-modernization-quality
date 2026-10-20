@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
 import { isEntrypoint } from '../src/gate/entrypoint';
 import { renderRiskRegister, runRiskRegisterCli } from '../src/gate/risk-register-md';
-import { loadRisks, parseRisks, type Risk } from '../src/gate/risks';
+import { docsPath, loadRisks, parseRisks, type Risk } from '../src/gate/risks';
 
 const QA_IDS = [
   'RISK-FEE-01', 'RISK-FEE-02', 'RISK-DATE-01', 'RISK-DATE-02', 'RISK-DATE-03',
@@ -105,7 +105,7 @@ it('renderRiskRegister: escapes pipes and flattens line breaks so a cell cannot 
 });
 
 it('renderRiskRegister: matches the committed risk-register.md', () => {
-  const committed = readFileSync('../docs/quality/risk-register.md', 'utf8');
+  const committed = readFileSync(docsPath('quality/risk-register.md'), 'utf8');
   expect(renderRiskRegister(loadRisks())).toBe(committed);
 });
 
@@ -144,7 +144,7 @@ it('parseRisks: joins several problems with a semicolon and omits the path for a
 
 it('loadRisks: names the file it was asked to load', () => {
   expect(() => loadRisks('/nonexistent/risks.json')).toThrow(/ENOENT/);
-  expect(loadRisks('../docs/quality/risks.json')).toHaveLength(37);
+  expect(loadRisks(docsPath('quality/risks.json'))).toHaveLength(37);
 });
 
 it('runRiskRegisterCli writes the rendered register to the given file and reports it', () => {
@@ -159,4 +159,18 @@ it('isEntrypoint is true only for the script node was started with', () => {
   expect(isEntrypoint(file, pathToFileURL(join(tmpdir(), 'y.ts')).href)).toBe(false);
   expect(isEntrypoint(undefined, pathToFileURL(file).href)).toBe(false);
   expect(isEntrypoint('', pathToFileURL('').href)).toBe(false);
+});
+
+it('docsPath: defaults to ../docs and honours DOCS_DIR', () => {
+  const saved = process.env.DOCS_DIR;
+  try {
+    delete process.env.DOCS_DIR;
+    expect(docsPath('quality/x.md')).toBe('../docs/quality/x.md');
+    process.env.DOCS_DIR = '/elsewhere';
+    expect(docsPath('quality/x.md')).toBe('/elsewhere/quality/x.md');
+    process.env.DOCS_DIR = '';
+    expect(docsPath('quality/x.md')).toBe('../docs/quality/x.md');
+  } finally {
+    if (saved === undefined) delete process.env.DOCS_DIR; else process.env.DOCS_DIR = saved;
+  }
 });

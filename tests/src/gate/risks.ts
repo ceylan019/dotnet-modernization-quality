@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { z } from 'zod';
 
 const score = z.union([z.literal(1), z.literal(2), z.literal(3)]);
@@ -41,7 +42,12 @@ export function parseRisks(data: unknown, source = 'risks'): Risk[] {
   return result.data;
 }
 
-// The default path assumes the working directory is tests/, as for every npm script.
-export function loadRisks(file = '../docs/quality/risks.json'): Risk[] {
+// The default assumes the working directory is tests/, as for every npm script.
+// DOCS_DIR overrides it for runs from a copy of tests/ (the Stryker sandbox).
+export function docsPath(relative: string): string {
+  return join(process.env.DOCS_DIR || '../docs', relative);
+}
+
+export function loadRisks(file = docsPath('quality/risks.json')): Risk[] {
   return parseRisks(JSON.parse(readFileSync(file, 'utf8')), file);
 }

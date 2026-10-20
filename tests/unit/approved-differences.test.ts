@@ -1,8 +1,8 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { filterApproved, loadApprovedDifferences, type ApprovedDifference } from '../src/parity/approved-differences';
+import { DEFAULT_APPROVED_FILE, filterApproved, loadApprovedDifferences, type ApprovedDifference } from '../src/parity/approved-differences';
 import type { Difference } from '../src/parity/diff';
 
 const ad = (over: Partial<ApprovedDifference> = {}): ApprovedDifference => ({
@@ -92,8 +92,10 @@ it('loads an empty list', () => {
   expect(loadApprovedDifferences(fileWith([]))).toEqual([]);
 });
 
-it('loads the committed list by default', () => {
-  expect(loadApprovedDifferences()).toEqual([]);
+it('loads the committed list by default and it passes the schema', () => {
+  const committed = JSON.parse(readFileSync(DEFAULT_APPROVED_FILE, 'utf8')) as unknown[];
+  expect(loadApprovedDifferences()).toEqual(committed);
+  expect(DEFAULT_APPROVED_FILE).toMatch(/\/approved-differences\.json$/);
 });
 
 it('rejects an empty or blank approvedBy', () => {
@@ -148,5 +150,70 @@ it('keeps the underlying error as the cause when the file is unreadable', () => 
   } catch (e) {
     expect((e as Error).message).toMatch(/^Cannot read approved differences from \/nonexistent\/ad\.json: /);
     expect((e as Error).cause).toBeInstanceOf(Error);
+  }
+});
+
+const applied = (pattern: string, path: string) => filterApproved([diff(path)], 'ui-detail', 'detail-roy', [ad({ path: pattern })]).applied;
+
+it('distinguishes an array index from an object key with the same text', () => {
+  expect(applied('$.items[0]', '$.items[0]')).toEqual(['AD-001']);
+  expect(applied('$.items.0', '$.items.0')).toEqual(['AD-001']);
+  expect(applied('$.items[0]', '$.items.0')).toEqual([]);
+  expect(applied('$.items.0', '$.items[0]')).toEqual([]);
+  expect(applied('$.items[0]', '$.items[1]')).toEqual([]);
+});
+
+it('lets [*] match array indexes only, and a dot star match any one segment', () => {
+  expect(applied('$.items[*].n', '$.items[4].n')).toEqual(['AD-001']);
+  expect(applied('$.items[*].n', '$.items.k.n')).toEqual([]);
+  expect(applied('$.items.*.n', '$.items.k.n')).toEqual(['AD-001']);
+  expect(applied('$.items.*.n', '$.items[4].n')).toEqual(['AD-001']);
+});
+
+it('matches quoted keys exactly and keeps a dotted key apart from a nested path', () => {
+  expect(applied('$["a.b"]', '$["a.b"]')).toEqual(['AD-001']);
+  expect(applied('$["a.b"]', '$.a.b')).toEqual([]);
+  expect(applied('$.a.b', '$["a.b"]')).toEqual([]);
+  expect(applied('$["a\\"b"]', '$["a\\"b"]')).toEqual(['AD-001']);
+});
+
+it('rejects an approved path that is not well formed', () => {
+  for (const bad of ['.a', '$.', '$..a', '$[a]', '$[0', '$["x]', '$.a[', '$[-1]', '$["\\x"]']) {
+    expect(() => loadApprovedDifferences(fileWith([ad({ path: bad })]))).toThrow(/path/);
+  }
+  for (const good of ['$', '$.a', '$.a[0].b', '$["a.b"].c', 'schema:Permit.status', '$.*', '$[*]', '$request.a']) {
+    expect(loadApprovedDifferences(fileWith([ad({ path: good })]))).toHaveLength(1);
+  }
+});
+
+it('never matches a malformed path on either side', () => {
+  expect(applied('$.a[', '$.a[')).toEqual([]);
+  expect(applied('$..a', '$.a')).toEqual([]);
+});
+
+it('explains a malformed path in the load error', () => {
+  expect(() => loadApprovedDifferences(fileWith([ad({ path: '$..a' })]))).toThrow(/well formed path/);
+});
+
+it('rejects stray text before a bracket and a path that starts with a bracket', () => {
+  for (const bad of ['[0]', '[*]', '$]x[0]', '$]x[*]', '$]x["a"]', '$ x[0]']) {
+    expect(() => loadApprovedDifferences(fileWith([ad({ path: bad })]))).toThrow(/path/);
+  }
+});
+
+it('compares the first path segment too', () => {
+  expect(applied('schema:Permit.status', 'schema:Other.status')).toEqual([]);
+  expect(applied('$', '$')).toEqual(['AD-001']);
+  expect(applied('$', 'x')).toEqual([]);
+});
+
+it('does not let a wildcard in the observed path match a literal pattern', () => {
+  expect(applied('$.a.b', '$.a.*')).toEqual([]);
+  expect(applied('$.a[0]', '$.a[*]')).toEqual([]);
+});
+
+it('requires each path segment to start exactly where the previous one ended', () => {
+  for (const bad of [' [0]', '$]]][0]', '$]]][*]', '$]]]]]["a"]', '$]]].a']) {
+    expect(() => loadApprovedDifferences(fileWith([ad({ path: bad })]))).toThrow(/path/);
   }
 });

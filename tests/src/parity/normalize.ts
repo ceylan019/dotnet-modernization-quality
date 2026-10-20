@@ -11,22 +11,27 @@ function isIsoDateTime(value: string): boolean {
   return new Date(Date.UTC(year, month - 1, day)).getUTCDate() === day;
 }
 
+// Own keys only, sorted. fromEntries keeps a key named __proto__ as a key.
 function sortKeys(v: unknown): Json {
   if (Array.isArray(v)) return v.map(sortKeys);
   if (v !== null && typeof v === 'object') {
     const o = v as Record<string, unknown>;
-    const out: { [k: string]: Json } = {};
-    for (const k of Object.keys(o).sort()) out[k] = sortKeys(o[k]);
-    return out;
+    return Object.fromEntries(Object.keys(o).sort().map((k) => [k, sortKeys(o[k])]));
   }
   return v as Json;
 }
 
+function show(value: unknown): string {
+  return JSON.stringify(value) ?? String(value);
+}
+
+// The timestamp placeholder keeps the shape of the value (digits become d), so a change of
+// offset or fractional precision stays visible while the instant itself is ignored.
 function placeholder(kind: VolatileKind, value: Json): string {
-  const ok = typeof value === 'string' && (kind === 'referenceNumber'
-    ? REFERENCE.test(value)
-    : isIsoDateTime(value));
-  if (ok) return `<${kind}>`;
+  if (typeof value === 'string') {
+    if (kind === 'referenceNumber' && REFERENCE.test(value)) return '<referenceNumber>';
+    if (kind === 'timestamp' && isIsoDateTime(value)) return `<timestamp ${value.replace(/\d/g, 'd')}>`;
+  }
   const shown = typeof value === 'string' ? value : JSON.stringify(value);
   return `<invalid ${kind}: ${shown}>`;
 }
@@ -42,31 +47,49 @@ function mask(value: Json, segs: string[], kind: VolatileKind): Json {
   if (head === '*') {
     return Array.isArray(value) ? value.map((item) => mask(item, rest, kind)) : value;
   }
-  if (value !== null && typeof value === 'object' && !Array.isArray(value) && head! in value) {
-    return { ...value, [head!]: mask(value[head!]!, rest, kind) };
+  if (value !== null && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, head!)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === head ? mask(v, rest, kind) : v]));
   }
   return value;
 }
 
-function firstLine(message: unknown): string {
-  return String(message ?? '').split(/\r?\n/)[0]!;
+function firstLine(message: string): string {
+  return message.split(/\r?\n/)[0]!;
+}
+
+function normalizeError(e: unknown): Json {
+  if (e === null || typeof e !== 'object' || Array.isArray(e)) return `<invalid error: ${show(e)}>`;
+  const err = e as Record<string, unknown>;
+  const out: { [k: string]: Json } = {};
+  if (Object.hasOwn(err, 'message')) {
+    out.message = typeof err.message === 'string' ? firstLine(err.message) : `<invalid message: ${show(err.message)}>`;
+  }
+  if (Object.hasOwn(err, 'path')) out.path = sortKeys(err.path);
+  return out;
 }
 
 // Volatile paths are relative to the response `data` object.
+// Absent, null and empty stay three different normalized values: a missing `data` or `errors`
+// key is left out, and a body that is not a JSON object is shown (with the start of `raw`).
 export function normalizeResponse(
-  res: { status: number; body: unknown },
+  res: { status: number; body: unknown; raw?: string },
   volatile: Record<string, VolatileKind> = {},
 ): Json {
-  // A body that is not an object (text, an array, null) has no data or errors to read.
-  const body = (res.body ?? {}) as Record<string, unknown>;
-  let data = sortKeys(body.data ?? null);
-  for (const [path, kind] of Object.entries(volatile)) data = mask(data, segments(path), kind);
-  const rawErrors = Array.isArray(body.errors) ? body.errors : [];
-  const errors = rawErrors.map((e: unknown) => {
-    const err = (e ?? {}) as Record<string, unknown>;
-    return { message: firstLine(err.message), path: sortKeys(err.path ?? null) };
-  });
-  return { status: res.status, data, errors };
+  if (res.body === null || typeof res.body !== 'object' || Array.isArray(res.body)) {
+    const text = res.raw ?? show(res.body);
+    return { status: res.status, data: `<non-object body: ${text.slice(0, 200)}>` };
+  }
+  const body = res.body as Record<string, unknown>;
+  const out: { [k: string]: Json } = { status: res.status };
+  if (Object.hasOwn(body, 'data')) {
+    let data = sortKeys(body.data);
+    for (const [path, kind] of Object.entries(volatile)) data = mask(data, segments(path), kind);
+    out.data = data;
+  }
+  if (Object.hasOwn(body, 'errors')) {
+    out.errors = Array.isArray(body.errors) ? body.errors.map(normalizeError) : `<invalid errors: ${show(body.errors)}>`;
+  }
+  return sortKeys(out);
 }
 
 export function normalizeValues(values: Record<string, string>): Json {
