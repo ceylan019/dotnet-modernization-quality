@@ -5,12 +5,21 @@
 <head runat="server">
     <meta charset="utf-8" />
     <title>Permits</title>
+    <link rel="stylesheet" type="text/css" href="Content/site.css" />
 </head>
 <body>
     <form id="MainForm" runat="server">
-        <h1>Permit applications</h1>
-        <asp:ContentPlaceHolder ID="MainContent" runat="server">
-        </asp:ContentPlaceHolder>
+        <div id="header">
+            <h1>Permit applications</h1>
+            <div id="nav">
+                <a href="Default.aspx">Search</a>
+                <a href="Apply.aspx">New application</a>
+            </div>
+        </div>
+        <div id="content">
+            <asp:ContentPlaceHolder ID="MainContent" runat="server">
+            </asp:ContentPlaceHolder>
+        </div>
     </form>
 </body>
 </html>

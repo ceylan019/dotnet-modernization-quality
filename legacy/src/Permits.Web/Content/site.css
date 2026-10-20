@@ -1,0 +1,12 @@
+body { font-family: Segoe UI, Arial, sans-serif; font-size: 14px; margin: 0; color: #222; }
+#header { background: #1f3a5f; color: #fff; padding: 10px 20px; }
+#header h1 { margin: 0; font-size: 20px; }
+#nav a { color: #cfe0f5; margin-right: 14px; text-decoration: none; }
+#content { padding: 20px; }
+table.grid { border-collapse: collapse; width: 100%; }
+table.grid th, table.grid td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; }
+table.grid th { background: #e8eef5; }
+.field { margin-bottom: 8px; }
+.field label, .field span.label { display: inline-block; width: 140px; }
+.error { color: #ff0000; }
+.success { color: #0a6b2d; }
