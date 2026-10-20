@@ -1,13 +1,176 @@
 name: legacy
+
 on:
+  push:
+    paths:
+      - "legacy/**"
+      - ".github/workflows/legacy.yml"
   workflow_dispatch:
     inputs:
       mode:
         description: smoke or record
-        required: false
+        type: choice
+        options:
+          - smoke
+          - record
         default: smoke
+
+permissions:
+  contents: read
+
+concurrency:
+  group: legacy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  stub:
-    runs-on: ubuntu-latest
+  legacy:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      # How SQL Server gets onto the runner: "mssqlsuite" (first choice) or
+      # "chocolatey" (fallback step below, used only when this value is changed).
+      SQL_INSTALL: mssqlsuite
+      FIXED_TODAY: "2026-10-15"
+      TARGET: legacy
+      BASE_URL: http://localhost:8080
     steps:
-      - run: echo "stub; the real workflow lives on the foundation branch"
+      - uses: actions/checkout@v7
+
+      - name: Generate the SQL Server password for this run
+        run: |
+          $password = 'Ci' + [guid]::NewGuid().ToString('N') + 'Zx9'
+          Write-Output "::add-mask::$password"
+          Add-Content -Path $env:GITHUB_ENV -Value "MSSQL_SA_PASSWORD=$password"
+          Add-Content -Path $env:GITHUB_ENV -Value "LEGACY_DB_URL=Server=localhost,1433;Database=master;User Id=sa;Password=$password;TrustServerCertificate=true"
+
+      - name: Install SQL Server 2022 Developer
+        if: env.SQL_INSTALL == 'mssqlsuite'
+        uses: potatoqualitee/mssqlsuite@v1.12
+        with:
+          install: sqlengine
+          version: "2022"
+          sa-password: ${{ env.MSSQL_SA_PASSWORD }}
+          collation: SQL_Latin1_General_CP1_CI_AS
+
+      # Fallback, off by default. Set SQL_INSTALL to "chocolatey" if the step above
+      # fails on the runner image. SQL Server Express installs with Windows logins
+      # only and a dynamic port, so this enables SQL logins, pins TCP to 1433 and
+      # restarts the service before enabling sa.
+      - name: Install SQL Server Express (Chocolatey fallback)
+        if: env.SQL_INSTALL == 'chocolatey'
+        run: |
+          choco install sql-server-express -y --no-progress
+          $instanceId = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL').SQLEXPRESS
+          $root = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$instanceId\MSSQLServer"
+          Set-ItemProperty -Path $root -Name LoginMode -Value 2
+          Set-ItemProperty -Path "$root\SuperSocketNetLib\Tcp" -Name Enabled -Value 1
+          Set-ItemProperty -Path "$root\SuperSocketNetLib\Tcp\IPAll" -Name TcpDynamicPorts -Value ''
+          Set-ItemProperty -Path "$root\SuperSocketNetLib\Tcp\IPAll" -Name TcpPort -Value '1433'
+          Restart-Service -Name 'MSSQL$SQLEXPRESS' -Force
+          Invoke-Sqlcmd -ServerInstance '.\SQLEXPRESS' -TrustServerCertificate -Query "ALTER LOGIN [sa] WITH PASSWORD = N'$env:MSSQL_SA_PASSWORD'; ALTER LOGIN [sa] ENABLE;"
+
+      - name: Wait for SQL Server on TCP 1433
+        run: |
+          $deadline = (Get-Date).AddSeconds(120)
+          while ($true) {
+            try {
+              Invoke-Sqlcmd -ServerInstance 'localhost,1433' -Username sa -Password $env:MSSQL_SA_PASSWORD -TrustServerCertificate -Query 'SELECT @@VERSION AS Version' | Format-List
+              break
+            } catch {
+              if ((Get-Date) -gt $deadline) { throw }
+              Start-Sleep -Seconds 5
+            }
+          }
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Reset the legacy database
+        working-directory: tests
+        run: npx tsx src/db/reset-legacy-db.ts --seed none
+
+      # If dotnet cannot build the net48 projects here, use microsoft/setup-msbuild
+      # and run: msbuild legacy\Permits.Legacy.sln /restore /p:Configuration=Release
+      - name: Build the legacy solution
+        run: dotnet build legacy/Permits.Legacy.sln -c Release
+
+      - name: Point web.config at the runner database and the fixed date
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'legacy\src\Permits.Web\web.config'
+          $config = New-Object System.Xml.XmlDocument
+          $config.PreserveWhitespace = $true
+          $config.Load($path)
+
+          function Set-ConfigEntry([string]$Section, [string]$KeyAttribute, [string]$Key, [string]$ValueAttribute, [string]$Value) {
+            $parent = $config.SelectSingleNode("/configuration/$Section")
+            if ($null -eq $parent) {
+              $parent = $config.CreateElement($Section)
+              [void]$config.DocumentElement.PrependChild($parent)
+            }
+            $entry = $parent.SelectSingleNode("add[@$KeyAttribute='$Key']")
+            if ($null -eq $entry) {
+              $entry = $config.CreateElement('add')
+              $entry.SetAttribute($KeyAttribute, $Key)
+              [void]$parent.AppendChild($entry)
+            }
+            $entry.SetAttribute($ValueAttribute, $Value)
+          }
+
+          Set-ConfigEntry 'connectionStrings' 'name' 'PermitsDb' 'connectionString' "Data Source=localhost,1433;Initial Catalog=Permits;User ID=sa;Password=$env:MSSQL_SA_PASSWORD"
+          Set-ConfigEntry 'appSettings' 'key' 'FixedToday' 'value' $env:FIXED_TODAY
+          $config.Save($path)
+
+      - name: Start IIS Express
+        run: |
+          $site = Join-Path $env:GITHUB_WORKSPACE 'legacy\src\Permits.Web'
+          Start-Process -FilePath 'C:\Program Files\IIS Express\iisexpress.exe' `
+            -ArgumentList "/path:$site", '/port:8080', '/clr:v4.0' `
+            -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'iisexpress.out.log') `
+            -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'iisexpress.err.log')
+
+      - name: Wait for the legacy app
+        run: |
+          $deadline = (Get-Date).AddSeconds(90)
+          $ready = $false
+          $lastError = ''
+          while (-not $ready -and (Get-Date) -lt $deadline) {
+            try {
+              $response = Invoke-WebRequest -Uri "$env:BASE_URL/Default.aspx" -UseBasicParsing -TimeoutSec 60
+              $ready = $response.StatusCode -eq 200
+            } catch {
+              $lastError = if ($_.ErrorDetails) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+              Start-Sleep -Seconds 3
+            }
+          }
+          if (-not $ready) {
+            Write-Output $lastError
+            throw "Default.aspx did not return HTTP 200 within 90 seconds"
+          }
+
+      - name: Run the smoke suite
+        working-directory: tests
+        run: npm run test:smoke
+
+      - name: Show IIS Express output
+        if: failure()
+        run: Get-Content (Join-Path $env:RUNNER_TEMP 'iisexpress.*.log') -ErrorAction SilentlyContinue
+
+      - name: Upload Playwright report and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: legacy-playwright
+          path: |
+            tests/playwright-report
+            tests/test-results
+          if-no-files-found: ignore
+          retention-days: 14
