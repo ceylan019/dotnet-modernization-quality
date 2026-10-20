@@ -10,9 +10,13 @@
     "typecheck": "tsc -p tsconfig.json",
     "db:legacy:reset": "tsx --env-file-if-exists=../.env src/db/reset-legacy-db.ts",
     "test:e2e": "playwright test",
-    "test:smoke": "playwright test --grep @smoke"
+    "test:smoke": "playwright test --grep @smoke",
+    "seed:small": "tsx src/seed/generate.ts --size small --out seed-data",
+    "seed:large": "tsx src/seed/generate.ts --size large --out reports/seed-large",
+    "test:unit": "vitest run unit/"
   },
   "dependencies": {
+    "@faker-js/faker": "10.6.0",
     "mssql": "12.7.10"
   },
   "devDependencies": {
