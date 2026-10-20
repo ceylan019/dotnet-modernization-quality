@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { exitWith, isEntrypoint } from './entrypoint';
 import { DEFAULT_EVIDENCE_DIR, readCheckEvidence } from './evidence';
@@ -32,9 +32,9 @@ export function parseGateArgs(argv: string[]): GateArgs {
   };
 }
 
-export function runGateCli(
-  argv: string[], env: Record<string, string | undefined>,
-): { output: string; exitCode: number } {
+// Prints the matrix to stdout only. The workflow appends it to the step summary with
+// `tee -a "$GITHUB_STEP_SUMMARY"`, so the refusal of a record mode run reaches the summary too.
+export function runGateCli(argv: string[]): { output: string; exitCode: number } {
   const args = parseGateArgs(argv);
   const results = readPlaywrightResults(args.playwright);
   if (results.some((r) => r.baselineRecorded)) {
@@ -44,9 +44,8 @@ export function runGateCli(
   const output = renderGateMarkdown(args.stage, gate);
   mkdirSync(args.out, { recursive: true });
   writeFileSync(join(args.out, 'traceability.json'), `${JSON.stringify({ stage: args.stage, ...gate }, null, 2)}\n`);
-  if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, output);
   return { output, exitCode: gate.problems.length > 0 ? 1 : 0 };
 }
 
 // Stryker disable next-line all: CLI entrypoint guard, exercised by the workflow
-if (isEntrypoint(process.argv[1], import.meta.url)) exitWith(runGateCli(process.argv.slice(2), process.env));
+if (isEntrypoint(process.argv[1], import.meta.url)) exitWith(runGateCli(process.argv.slice(2)));
