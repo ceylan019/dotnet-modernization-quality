@@ -1,6 +1,6 @@
 # 0006: The legacy app runs on GitHub's Windows runners
 
-**Status:** proposed. The recipe below is written and lint clean but **unproven until the first Windows run** of `.github/workflows/legacy.yml`. The GitHub repository did not exist when it was written, so no Windows run has happened yet. Timings and any recipe changes get recorded here after the first green run.
+**Status:** accepted for smoke mode, which ran green on Windows on 2026-10-20 (run 2). Record mode is still **unproven**. What each Windows run proved, with timings and recipe changes, is recorded under "What is proven so far".
 
 ## Context
 
@@ -51,7 +51,9 @@ On Windows, run 1 (2026-10-20, run 39504694974, smoke mode from the push, 6 min 
 - Worked: the `mssqlsuite` install (3 min 27 s) and the TCP 1433 wait (4 s), `npm ci` with Chromium (40 s), the reset with the small seed (4 s), `dotnet build` with 0 warnings and 0 errors (23 s), and the PowerShell edit of `web.config` (1 s).
 - Failed: IIS Express, started by `Start-Process` with its output redirected to files, printed `Registration completed` and `IIS Express is running` for port 8080. Every request in the wait step was then refused ("No connection could be made because the target machine actively refused it"), its log shows no request at all, and the job's orphan process cleanup did not find it while it did find `dotnet` from the build step. So IIS Express exited between the two steps, most likely because the handles it shared with the start step closed when that step ended. Step 7 now starts it through `cmd` in a console of its own, and step 8 checks that the process is alive, so a repeat shows up as "IIS Express is not running" instead of 90 seconds of refused connections.
 
-Not proven yet: the IIS Express start above, the `web.config` edit taking effect, the .NET Framework runtime itself, and the smoke and record steps.
+On Windows, run 2 (2026-10-20, run 39506635132, smoke mode from the push, 6 min 25 s in all): green. IIS Express started through `cmd` stayed up, `/Default.aspx` answered 200 after 15 seconds, and the smoke step passed 15 tests with 1 skipped (the health endpoint, which only the modern app has), the same result as the Mono preview.
+
+Not proven yet: record mode (the two passes and their comparison, the completeness check, Lighthouse and k6).
 
 ## Local Mono preview (a test aid, not a substitute)
 
