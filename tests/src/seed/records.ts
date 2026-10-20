@@ -487,8 +487,15 @@ export function buildDataset(applicationCount: number): Dataset {
   }
 
   for (const [status, category] of STATUS_CATEGORIES) {
+    const boundary = new Set(builder.categories.expiryBoundary);
     builder.categories[category] = builder.applications
-      .filter((a) => a.status === status && effectiveStatus(a.status, a.lastUpdatedAt, FIXED_TODAY) === status)
+      .filter(
+        (a) =>
+          a.status === status &&
+          a.submittedOn <= FIXED_TODAY &&
+          !boundary.has(a.referenceNumber) &&
+          effectiveStatus(a.status, a.lastUpdatedAt, FIXED_TODAY) === status,
+      )
       .slice(0, STATUS_CATEGORY_LIMIT)
       .map((a) => a.referenceNumber);
   }

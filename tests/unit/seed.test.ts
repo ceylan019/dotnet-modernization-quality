@@ -95,3 +95,24 @@ describe('generated SQL', () => {
     }
   });
 });
+
+describe('committed seed files', () => {
+  const read = (name: string) =>
+    readFileSync(fileURLToPath(new URL(`../seed-data/${name}`, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
+
+  it('match what the generator produces now', () => {
+    expect(read('seed-small.sql')).toBe(small.sql.replace(/\r\n/g, '\n'));
+    expect(read('catalog.json')).toBe(`${JSON.stringify(small.catalog, null, 2)}\n`);
+  });
+
+  it('keeps status categories to dated-by-today, non-boundary records', () => {
+    const { categories } = small.catalog;
+    const boundary = new Set(categories.expiryBoundary);
+    for (const name of ['statusApproved', 'statusUnderReview', 'statusInfoRequested', 'statusRejected', 'statusSubmitted'] as const) {
+      for (const ref of categories[name]) {
+        expect(boundary.has(ref), `${name} ${ref}`).toBe(false);
+        expect(categories.dstWeekSubmission.slice(-7).includes(ref), `${name} ${ref}`).toBe(false);
+      }
+    }
+  });
+});
