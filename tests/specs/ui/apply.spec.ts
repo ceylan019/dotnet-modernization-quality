@@ -78,7 +78,7 @@ for (const v of VALIDATION) {
   });
 }
 
-// Accents, an apostrophe and both discounts typed into the form, stored through the page.
+// Accents, an apostrophe and the senior discount typed into the form, stored through the page.
 const SUBMIT_FORM: ApplyForm = {
   firstName: 'Jérôme',
   lastName: "O'Neill",

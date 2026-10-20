@@ -11,7 +11,9 @@ export default {
   vitest: { configFile: 'vitest.config.ts', dir: '.' },
   checkers: ['typescript'],
   tsconfigFile: 'tsconfig.json',
-  mutate: ['src/parity/**/*.ts', 'src/gate/**/*.ts', 'src/api/**/*.ts'],
+  // src/ui/browser.ts is left out: its code runs inside the page (page.evaluate), never under
+  // Vitest. The decisions it feeds live in src/ui/checks.ts.
+  mutate: ['src/parity/**/*.ts', 'src/gate/**/*.ts', 'src/api/**/*.ts', 'src/ui/**/*.ts', '!src/ui/browser.ts'],
   ignoreStatic: false,
   coverageAnalysis: 'perTest',
   reporters: ['clear-text', 'progress', 'json'],

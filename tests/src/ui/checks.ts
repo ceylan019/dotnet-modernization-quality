@@ -73,22 +73,36 @@ export interface Box {
   height: number;
 }
 
-// Two boxes are on one line when their vertical extents overlap by at least half the smaller height.
-function sameLine(a: Box, b: Box): boolean {
-  const overlap = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
-  return overlap >= Math.min(a.height, b.height) / 2;
+// Reading order: boxes are grouped into lines from the top, then read left to right within a
+// line. A box joins the current line when it overlaps the line's vertical extent by at least half
+// of the smaller of its own height and the line's height. Returns indexes into `boxes`. (Both
+// sorts are stable, so ties keep the earlier order.)
+export function visualOrder(boxes: Box[]): number[] {
+  const byTop = boxes.map((_, i) => i).sort((i, j) => boxes[i]!.y - boxes[j]!.y);
+  const lines: Line[] = [];
+  for (const i of byTop) {
+    const b = boxes[i]!;
+    const line = lines.at(-1);
+    if (line && joinsLine(line, b)) {
+      line.members.push(i);
+      line.bottom = Math.max(line.bottom, b.y + b.height);
+    } else {
+      lines.push({ top: b.y, bottom: b.y + b.height, members: [i] });
+    }
+  }
+  return lines.flatMap((line) => line.members.sort((i, j) => boxes[i]!.x - boxes[j]!.x));
 }
 
-// Reading order: top to bottom, left to right within a line. Returns indexes into `boxes`.
-export function visualOrder(boxes: Box[]): number[] {
-  return boxes
-    .map((_, i) => i)
-    .sort((i, j) => {
-      const a = boxes[i]!;
-      const b = boxes[j]!;
-      const d = sameLine(a, b) ? a.x - b.x : a.y - b.y;
-      return d !== 0 ? d : i - j;
-    });
+interface Line {
+  top: number;
+  bottom: number;
+  members: number[];
+}
+
+// Boxes arrive sorted by top, so a box never starts above its line.
+function joinsLine(line: Line, b: Box): boolean {
+  const overlap = Math.min(line.bottom, b.y + b.height) - b.y;
+  return overlap >= Math.min(b.height, line.bottom - line.top) / 2;
 }
 
 export interface FocusStyle {
@@ -107,12 +121,19 @@ function transparent(color: string): boolean {
   return m !== null && Number(m[1]) === 0;
 }
 
-// A focused control shows an indicator when it has a visible outline, or when its shadow,
-// border or background differ from the unfocused control.
+function outlineShown(s: FocusStyle): boolean {
+  return s.outlineStyle !== 'none' && Number.parseFloat(s.outlineWidth) > 0 && !transparent(s.outlineColor);
+}
+
+function sameOutline(a: FocusStyle, b: FocusStyle): boolean {
+  return a.outlineStyle === b.outlineStyle && a.outlineWidth === b.outlineWidth && a.outlineColor === b.outlineColor;
+}
+
+// A focused control shows an indicator when focus brings a visible outline (none before, or a
+// different one), or changes its shadow, border or background. An outline that is always there
+// does not tell the user where focus is.
 export function focusIndicatorVisible(unfocused: FocusStyle, focused: FocusStyle): boolean {
-  const outline = focused.outlineStyle !== 'none'
-    && Number.parseFloat(focused.outlineWidth) > 0
-    && !transparent(focused.outlineColor);
+  const outline = outlineShown(focused) && (!outlineShown(unfocused) || !sameOutline(unfocused, focused));
   const shadow = focused.boxShadow !== 'none' && focused.boxShadow !== unfocused.boxShadow;
   const border = focused.borderColor !== unfocused.borderColor || focused.borderWidth !== unfocused.borderWidth;
   const background = focused.backgroundColor !== unfocused.backgroundColor;
@@ -173,8 +194,9 @@ export function tabOrderProblems(r: TabReport): string[] {
   const problems: string[] = [];
   const missed = r.fields.filter((f) => !r.reached.includes(f));
   if (missed.length > 0) problems.push(`not reached with Tab: ${missed.join(', ')}`);
+  // The reached fields in visual order; same length as `reached`.
   const expected = r.fields.filter((f) => r.reached.includes(f));
-  if (expected.join('\n') !== r.reached.join('\n')) {
+  if (expected.some((f, i) => f !== r.reached[i])) {
     problems.push(`Tab order differs from visual order:\n  tab:    ${r.reached.join(', ')}\n  visual: ${expected.join(', ')}`);
   }
   if (r.withoutFocusIndicator.length > 0) problems.push(`no visible focus indicator: ${r.withoutFocusIndicator.join(', ')}`);
@@ -207,6 +229,11 @@ export function axeSummary(violations: { id: string; impact?: string | null; nod
       targets: v.nodes.slice(0, SHOWN_TARGETS).map((n) => targetText(n.target)),
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// Elements affected by all violations together.
+export function affectedNodes(violations: AxeViolation[]): number {
+  return violations.reduce((sum, v) => sum + v.nodes, 0);
 }
 
 export function seriousOrCritical(violations: AxeViolation[]): AxeViolation[] {

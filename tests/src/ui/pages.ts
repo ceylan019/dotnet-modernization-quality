@@ -26,6 +26,15 @@ export const PREVIEW_FORM: ApplyForm = {
   areaSqM: '10.70',
 };
 
+// Every ApplyForm field. A form shows at least this many controls, so the keyboard check can
+// tell an empty walk (controls it cannot see, such as inputs inside shadow roots) from a pass.
+export const APPLY_FORM_FIELDS = [
+  'firstName', 'lastName', 'email', 'phone', 'isSenior', 'isNonProfit', 'permitType', 'siteAddress', 'areaSqM', 'description',
+] as const;
+type UnlistedField = Exclude<keyof ApplyForm, (typeof APPLY_FORM_FIELDS)[number]>;
+// Does not compile when ApplyForm gains a field the list above does not name.
+export const APPLY_FORM_FIELDS_COMPLETE: [UnlistedField] extends [never] ? true : never = true;
+
 // Opens a page as the page-level checks see it. Search runs an empty search first, so the
 // results grid is full (20 rows and the pager) in both apps.
 export async function showPage(app: AppDriver, page: Page, name: PageName): Promise<void> {

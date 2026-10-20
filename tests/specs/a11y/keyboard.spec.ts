@@ -4,7 +4,7 @@ import { expect, test } from '../../src/fixtures';
 import { tabWalk } from '../../src/ui/browser';
 import { tabOrderProblems } from '../../src/ui/checks';
 import { pushEvidence, recordFindings } from '../../src/ui/findings';
-import { PREVIEW_FORM } from '../../src/ui/pages';
+import { APPLY_FORM_FIELDS, PREVIEW_FORM } from '../../src/ui/pages';
 
 const SUITE = 'a11y';
 const RISKS = ['RISK-A11Y-02'];
@@ -34,6 +34,9 @@ for (const state of STATES) {
   test(`${state.title}: Tab reaches every field in visual order with a visible focus indicator`, { tag: TAGS }, async ({ app, page, env }, testInfo) => {
     await state.show(app, page);
     const report = await tabWalk(page);
+    // The walk sees light DOM controls only; fewer than the form has means it missed some.
+    expect(report.fields.length, `form controls found (ApplyForm has ${APPLY_FORM_FIELDS.length} fields)`)
+      .toBeGreaterThanOrEqual(APPLY_FORM_FIELDS.length);
     recordFindings(testInfo, env, { suite: SUITE, caseId: state.caseId, risks: RISKS, request: { view: state.caseId, keys: 'Tab' }, actual: report });
     test.skip(env.parityMode === 'record', 'gate applies to the modern app');
 
