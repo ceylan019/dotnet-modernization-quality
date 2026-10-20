@@ -22,8 +22,8 @@ Steps, in order:
 4. Reset the database: `npx tsx src/db/reset-legacy-db.ts --seed small` drops and recreates `Permits`, runs `legacy/db/*.sql` in name order and loads the small seed. The smoke specs open seeded applications picked from the catalog, so they need it.
 5. Build: `dotnet build legacy/Permits.Legacy.sln -c Release` with the SDK already on the image. The projects are SDK style and get the .NET Framework 4.8 reference assemblies from NuGet, so no targeting pack is needed.
 6. Write the connection string and `FixedToday` (`2026-10-15`) into `legacy/src/Permits.Web/web.config` of the runner's working copy with PowerShell. The committed file keeps a password-free default.
-7. Start IIS Express in the background: `iisexpress.exe /path:<workspace>\legacy\src\Permits.Web /port:8080 /clr:v4.0`.
-8. Wait up to 90 seconds for HTTP 200 on `/Default.aspx` (the first request compiles the pages).
+7. Start IIS Express in the background: `iisexpress.exe /path:<workspace>\legacy\src\Permits.Web /port:8080 /clr:v4.0`. It runs inside `cmd /c`, started hidden with `Start-Process`, so it has a console of its own; `cmd` redirects its output to log files in `RUNNER_TEMP`.
+8. Wait up to 90 seconds for HTTP 200 on `/Default.aspx` (the first request compiles the pages). The wait fails at once if no `iisexpress` process is running.
 9. Smoke mode: run Playwright with `TARGET=legacy` and `BASE_URL=http://localhost:8080`: `npx playwright test --project read-only --project legacy-smoke --grep @smoke`. That is the shared smoke spec plus the Web Forms checks in `tests/specs-legacy/`. The `legacy-smoke` project exists only with `TARGET=legacy`, and naming it fails the step if it ever goes missing.
 10. Record mode, instead of step 9: empty `tests/baselines/legacy`, then twice reset the database with the small seed, warm up the app and record `specs/api specs/ui specs/a11y specs/security` (the second pass into a temporary folder). The two passes may differ only in `recordedAt`. The job then checks for at least 400 case files and `schema/introspection.json`, records Lighthouse and k6 reference numbers (a k6 threshold breach, exit code 99, does not fail the job; any other failure or a missing summary does) and uploads everything as the artifact `legacy-baselines`.
 11. Always upload `tests/playwright-report` and `tests/test-results`. On failure, print the IIS Express output.
@@ -33,7 +33,7 @@ Steps, in order:
 - **SQL Server install fails:** change `SQL_INSTALL` at the top of the job to `chocolatey`. That step installs `sql-server-express`, then enables SQL logins (`LoginMode = 2`), pins TCP to port 1433 in the registry, restarts the service and enables `sa`.
 - **`dotnet build` cannot build net48 on the runner:** add `microsoft/setup-msbuild` and run `msbuild legacy\Permits.Legacy.sln /restore /p:Configuration=Release`.
 - **IIS Express missing or failing:** enable full IIS (`Install-WindowsFeature Web-Server,Web-Asp-Net45`) and create a site on port 8080 whose physical path is `legacy\src\Permits.Web`.
-- **IIS Express start step hangs:** drop the output redirection from `Start-Process` so no handle is shared with the step.
+- **IIS Express start step hangs, or IIS Express exits after it:** make sure `Start-Process` itself redirects nothing, so IIS Express shares no handle with the step. Run 1 hit the second case (see below).
 - **Assembly binding failures:** add `bindingRedirect` entries to `web.config`. One for `Newtonsoft.Json` is already there because GraphQL.NET 2.4.0 references version 10.0.0.0 and the app ships 13.0.3.
 - **Stop rule:** if 10 Windows runs have not produced a green smoke run, stop the plan and take the failing logs to the owner.
 
@@ -46,7 +46,12 @@ On the Mac (2026-10-20):
 - `actionlint` reports nothing for the workflow.
 - The smoke step of the workflow passes against the local Mono preview described below, after a reset with the small seed: 15 passed, and 1 skipped (the health endpoint, which only the modern app has). After a reset without the seed, 5 of the legacy smoke checks fail, which is why step 4 loads it.
 
-Not proven: everything that happens only on Windows. That is the `mssqlsuite` install on the current runner image, the IIS Express path and its background start, the PowerShell edit of `web.config`, the .NET Framework runtime itself, and all timings.
+On Windows, run 1 (2026-10-20, run 39504694974, smoke mode from the push, 6 min 40 s in all):
+
+- Worked: the `mssqlsuite` install (3 min 27 s) and the TCP 1433 wait (4 s), `npm ci` with Chromium (40 s), the reset with the small seed (4 s), `dotnet build` with 0 warnings and 0 errors (23 s), and the PowerShell edit of `web.config` (1 s).
+- Failed: IIS Express, started by `Start-Process` with its output redirected to files, printed `Registration completed` and `IIS Express is running` for port 8080. Every request in the wait step was then refused ("No connection could be made because the target machine actively refused it"), its log shows no request at all, and the job's orphan process cleanup did not find it while it did find `dotnet` from the build step. So IIS Express exited between the two steps, most likely because the handles it shared with the start step closed when that step ended. Step 7 now starts it through `cmd` in a console of its own, and step 8 checks that the process is alive, so a repeat shows up as "IIS Express is not running" instead of 90 seconds of refused connections.
+
+Not proven yet: the IIS Express start above, the `web.config` edit taking effect, the .NET Framework runtime itself, and the smoke and record steps.
 
 ## Local Mono preview (a test aid, not a substitute)
 

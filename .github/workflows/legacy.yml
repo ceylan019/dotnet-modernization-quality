@@ -134,10 +134,12 @@ jobs:
       - name: Start IIS Express
         run: |
           $site = Join-Path $env:GITHUB_WORKSPACE 'legacy\src\Permits.Web'
-          Start-Process -FilePath 'C:\Program Files\IIS Express\iisexpress.exe' `
-            -ArgumentList "/path:$site", '/port:8080', '/clr:v4.0' `
-            -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'iisexpress.out.log') `
-            -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'iisexpress.err.log')
+          $out = Join-Path $env:RUNNER_TEMP 'iisexpress.out.log'
+          $err = Join-Path $env:RUNNER_TEMP 'iisexpress.err.log'
+          # Started with redirected output, IIS Express was gone before the next step (first Windows run).
+          # Through cmd it gets a hidden console of its own to wait on for Q, and cmd still writes the logs.
+          $command = "`"`"C:\Program Files\IIS Express\iisexpress.exe`" /path:`"$site`" /port:8080 /clr:v4.0 > `"$out`" 2> `"$err`"`""
+          Start-Process -FilePath $env:ComSpec -ArgumentList "/c $command" -WindowStyle Hidden
 
       - name: Wait for the legacy app
         run: |
@@ -145,6 +147,9 @@ jobs:
           $ready = $false
           $lastError = ''
           while (-not $ready -and (Get-Date) -lt $deadline) {
+            if (-not (Get-Process -Name iisexpress -ErrorAction SilentlyContinue)) {
+              throw 'IIS Express is not running'
+            }
             try {
               $response = Invoke-WebRequest -Uri "$env:BASE_URL/Default.aspx" -UseBasicParsing -TimeoutSec 60
               $ready = $response.StatusCode -eq 200
