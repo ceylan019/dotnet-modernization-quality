@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+.vs/
+*.user
+
+# Node and test output
+node_modules/
+tests/reports/
+tests/test-results/
+tests/playwright-report/
+tests/allure-results/
+tests/allure-report/
+.stryker-tmp/
+
+# Local configuration
+.env
+
+# Tool scratch space
+.superpowers/
+.DS_Store

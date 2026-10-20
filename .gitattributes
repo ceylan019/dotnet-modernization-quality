@@ -1,0 +1,7 @@
+* text=auto
+*.sql text eol=crlf
+*.aspx text eol=crlf
+*.master text eol=crlf
+*.asax text eol=crlf
+*.config text eol=crlf
+*.png binary

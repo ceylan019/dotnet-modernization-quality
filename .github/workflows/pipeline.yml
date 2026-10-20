@@ -1,0 +1,8 @@
+name: pipeline
+on:
+  workflow_dispatch:
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "stub; the real workflow lives on the foundation branch"
