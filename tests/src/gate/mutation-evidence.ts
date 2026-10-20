@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { DEFAULT_EVIDENCE_DIR, writeCheckEvidence, type CheckEvidence } from './evidence';
-import { isEntrypoint } from './entrypoint';
+import { exitWith, isEntrypoint, type CliRun } from './entrypoint';
 
 export const MUTATION_EVIDENCE_NAME = 'mutation-score';
 export const MUTATION_THRESHOLD = 85;
@@ -36,14 +36,14 @@ export function mutationEvidence(report: MutationReport): CheckEvidence {
 
 const USAGE = 'Usage: tsx src/gate/mutation-evidence.ts <mutation.json> [--out <evidence dir>]';
 
-function main(): void {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: { out: { type: 'string', default: DEFAULT_EVIDENCE_DIR } } });
+export function runMutationCli(argv: string[]): CliRun {
+  const { positionals, values } = parseArgs({ args: argv, allowPositionals: true, options: { out: { type: 'string', default: DEFAULT_EVIDENCE_DIR } } });
   const [input] = positionals;
   if (!input) throw new Error(USAGE);
   const evidence = mutationEvidence(JSON.parse(readFileSync(input, 'utf8')) as MutationReport);
   writeCheckEvidence(evidence, values.out);
-  console.log(JSON.stringify(evidence, null, 2));
-  process.exitCode = evidence.passed ? 0 : 1;
+  return { output: JSON.stringify(evidence, null, 2), exitCode: evidence.passed ? 0 : 1 };
 }
 
-if (isEntrypoint(process.argv[1], import.meta.url)) main();
+// Stryker disable next-line all: CLI entrypoint guard, exercised by the workflow
+if (isEntrypoint(process.argv[1], import.meta.url)) exitWith(runMutationCli(process.argv.slice(2)));

@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isEntrypoint } from './entrypoint';
+import { exitWith, isEntrypoint } from './entrypoint';
 import { DEFAULT_EVIDENCE_DIR, readCheckEvidence } from './evidence';
 import { readPlaywrightResults } from './results';
 import { loadRisks } from './risks';
@@ -48,8 +48,5 @@ export function runGateCli(
   return { output, exitCode: gate.problems.length > 0 ? 1 : 0 };
 }
 
-if (isEntrypoint(process.argv[1], import.meta.url)) {
-  const { output, exitCode } = runGateCli(process.argv.slice(2), process.env);
-  console.log(output);
-  process.exitCode = exitCode;
-}
+// Stryker disable next-line all: CLI entrypoint guard, exercised by the workflow
+if (isEntrypoint(process.argv[1], import.meta.url)) exitWith(runGateCli(process.argv.slice(2), process.env));

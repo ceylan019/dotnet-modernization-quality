@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { isEntrypoint } from '../gate/entrypoint';
+import { exitWith, isEntrypoint, type CliRun } from '../gate/entrypoint';
 
 // Folders holding timings or scores. They vary between runs by nature and are not parity baselines.
 const SKIPPED_TOP_LEVEL = new Set(['lighthouse', 'perf']);
@@ -87,13 +87,14 @@ export function isDeterministic(c: DirComparison): boolean {
   return c.files > 0 && c.onlyInFirst.length === 0 && c.onlyInSecond.length === 0 && c.different.length === 0;
 }
 
-function main(): void {
-  const { positionals } = parseArgs({ allowPositionals: true });
+export function runCompareCli(argv: string[]): CliRun {
+  const { positionals } = parseArgs({ args: argv, allowPositionals: true });
   const [first, second] = positionals;
   if (!first || !second) throw new Error('Usage: tsx src/parity/compare-baseline-dirs.ts <first dir> <second dir>');
   const result = compareBaselineDirs(first, second);
-  console.log(JSON.stringify({ files: result.files, onlyInFirst: result.onlyInFirst, onlyInSecond: result.onlyInSecond, different: result.different, firstDifferences: result.firstDifferences }, null, 2));
-  process.exitCode = isDeterministic(result) ? 0 : 1;
+  const output = JSON.stringify({ files: result.files, onlyInFirst: result.onlyInFirst, onlyInSecond: result.onlyInSecond, different: result.different, firstDifferences: result.firstDifferences }, null, 2);
+  return { output, exitCode: isDeterministic(result) ? 0 : 1 };
 }
 
-if (isEntrypoint(process.argv[1], import.meta.url)) main();
+// Stryker disable next-line all: CLI entrypoint guard, exercised by the workflow
+if (isEntrypoint(process.argv[1], import.meta.url)) exitWith(runCompareCli(process.argv.slice(2)));

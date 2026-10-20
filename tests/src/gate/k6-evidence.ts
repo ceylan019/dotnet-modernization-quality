@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { DEFAULT_EVIDENCE_DIR, writeCheckEvidence, type CheckEvidence } from './evidence';
-import { isEntrypoint } from './entrypoint';
+import { exitWith, isEntrypoint, type CliRun } from './entrypoint';
 
 export const K6_EVIDENCE_NAME = 'perf-k6-journeys';
 
@@ -61,14 +61,14 @@ export function k6Evidence(summary: unknown): CheckEvidence {
   };
 }
 
-function main(): void {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: { out: { type: 'string', default: DEFAULT_EVIDENCE_DIR } } });
+export function runK6Cli(argv: string[]): CliRun {
+  const { positionals, values } = parseArgs({ args: argv, allowPositionals: true, options: { out: { type: 'string', default: DEFAULT_EVIDENCE_DIR } } });
   const file = positionals[0];
   if (!file) throw new Error('Usage: tsx src/gate/k6-evidence.ts <k6-summary.json> [--out <evidence dir>]');
   const evidence = k6Evidence(JSON.parse(readFileSync(file, 'utf8')));
   writeCheckEvidence(evidence, values.out);
-  console.log(JSON.stringify(evidence, null, 2));
-  process.exitCode = evidence.passed ? 0 : 1;
+  return { output: JSON.stringify(evidence, null, 2), exitCode: evidence.passed ? 0 : 1 };
 }
 
-if (isEntrypoint(process.argv[1], import.meta.url)) main();
+// Stryker disable next-line all: CLI entrypoint guard, exercised by the workflow
+if (isEntrypoint(process.argv[1], import.meta.url)) exitWith(runK6Cli(process.argv.slice(2)));

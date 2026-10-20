@@ -276,3 +276,31 @@ it('CLI refuses to gate a record mode run and writes nothing', () => {
   expect(existsSync(join(c.out, 'traceability.json'))).toBe(false);
   expect(existsSync(summary)).toBe(false);
 });
+
+it('parseGateArgs applies the documented defaults and rejects a flag without a value by name', async () => {
+  const { parseGateArgs } = await import('../src/gate/gate-cli');
+  expect(parseGateArgs(['--stage', 'prod'])).toEqual({
+    stage: 'prod',
+    playwright: 'reports/playwright.json',
+    evidence: 'reports/evidence',
+    risks: '../docs/quality/risks.json',
+    out: 'reports',
+  });
+  expect(() => parseGateArgs(['--stage', 'qa', '--out'])).toThrow('Missing value for --out');
+  expect(() => parseGateArgs(['--bogus', 'x'])).toThrow('Unknown argument --bogus');
+  expect(() => parseGateArgs(['--stage', 'dev'])).toThrow('--stage must be one of qa, staging, prod');
+});
+
+it('CLI refuses the run when only one of several results recorded a baseline', () => {
+  const c = cliDir();
+  writeFileSync(c.pw, JSON.stringify({
+    suites: [{
+      title: 'f', file: 'f.spec.ts',
+      specs: [
+        { title: 'plain', file: 'f.spec.ts', tags: ['RISK-A-01'], tests: [{ status: 'expected', expectedStatus: 'passed', annotations: [], results: [] }] },
+        { title: 'rec', file: 'f.spec.ts', tags: ['RISK-A-01'], tests: [{ status: 'expected', expectedStatus: 'passed', annotations: [{ type: 'baseline-recorded' }], results: [] }] },
+      ],
+    }],
+  }));
+  expect(runGateCli(args(c), {})).toEqual({ output: 'Refusing to gate a record mode run', exitCode: 1 });
+});

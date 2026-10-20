@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { DEFAULT_EVIDENCE_DIR, writeCheckEvidence, type CheckEvidence } from './evidence';
-import { isEntrypoint } from './entrypoint';
+import { exitWith, isEntrypoint, type CliRun } from './entrypoint';
 
 export const LIGHTHOUSE_EVIDENCE_NAME = 'perf-lighthouse-budgets';
 
@@ -85,24 +85,22 @@ export function lighthouseEvidence(summary: LighthouseSummary): CheckEvidence {
 
 const USAGE = 'Usage: tsx src/gate/lighthouse-evidence.ts summarize <lhci dir> <summary.json>\n       tsx src/gate/lighthouse-evidence.ts evidence <summary.json> [--out <evidence dir>]';
 
-function main(): void {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: { out: { type: 'string', default: DEFAULT_EVIDENCE_DIR } } });
+export function runLighthouseCli(argv: string[]): CliRun {
+  const { positionals, values } = parseArgs({ args: argv, allowPositionals: true, options: { out: { type: 'string', default: DEFAULT_EVIDENCE_DIR } } });
   const [command, input, output] = positionals;
   if (command === 'summarize' && input && output) {
     const summary = summarizeDirectory(input);
     if (summary.pages.length === 0) throw new Error(`No Lighthouse reports with a requested URL found in ${input}`);
     writeFileSync(output, `${JSON.stringify(summary, null, 2)}\n`);
-    console.log(JSON.stringify(summary, null, 2));
-    return;
+    return { output: JSON.stringify(summary, null, 2), exitCode: 0 };
   }
   if (command === 'evidence' && input) {
     const evidence = lighthouseEvidence(JSON.parse(readFileSync(input, 'utf8')) as LighthouseSummary);
     writeCheckEvidence(evidence, values.out);
-    console.log(JSON.stringify(evidence, null, 2));
-    process.exitCode = evidence.passed ? 0 : 1;
-    return;
+    return { output: JSON.stringify(evidence, null, 2), exitCode: evidence.passed ? 0 : 1 };
   }
   throw new Error(USAGE);
 }
 
-if (isEntrypoint(process.argv[1], import.meta.url)) main();
+// Stryker disable next-line all: CLI entrypoint guard, exercised by the workflow
+if (isEntrypoint(process.argv[1], import.meta.url)) exitWith(runLighthouseCli(process.argv.slice(2)));
