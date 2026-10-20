@@ -82,7 +82,7 @@ export function compareSchemas(
   const after = buildClientSchema(live);
   const changes = new Map<Difference, BreakingChange>();
   for (const change of findBreakingChanges(before, after)) {
-    changes.set({ path: breakingChangePath(change), kind: 'changed', actual: change.description }, change);
+    changes.set({ path: breakingChangePath(change), kind: 'changed' }, change);
   }
   const { remaining, applied } = filterApproved([...changes.keys()], suite, caseId, approved);
   return {

@@ -1,5 +1,5 @@
 import { APPLICATION } from '../../src/api/operations';
-import { apiTags, expectData, runApiCase } from '../../src/api/parity-case';
+import { apiTags, expectData, recording, runApiCase } from '../../src/api/parity-case';
 import { category, loadCatalog } from '../../src/catalog';
 import { expect, test } from '../../src/fixtures';
 
@@ -65,6 +65,6 @@ test(`application ${NOT_FOUND} that does not exist`, { tag: apiTags(['RISK-API-0
     query: APPLICATION,
     variables: { referenceNumber: NOT_FOUND },
   });
-  const data = expectData(res) as unknown as Found;
-  expect(data.application, res.raw).toBeNull();
+  // Legacy answers null without an error; the modern app may answer differently (parity decides).
+  if (recording()) expect((expectData(res) as unknown as Found).application, res.raw).toBeNull();
 });

@@ -1,24 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 import { loadEnv } from './src/config/env';
+import { CHANGES_DATA_PROJECT, CHANGES_DATA_SPECS } from './src/run-order';
 
 const env = loadEnv();
-
-// Specs that create or change records. With one worker, tests run in project order, so these
-// start only after every read-only spec has finished: searches, pages and their baselines see
-// the seed alone, and two runs on a fresh seed send the same requests in the same order.
-// (A teardown or dependency project would also order them, but runs unfiltered by --grep and
-// file arguments, and a dependency is skipped when an earlier test fails.)
-const CHANGES_DATA = [
-  '**/api/workflow.spec.ts',
-  '**/ui/apply.spec.ts',
-  '**/ui/review.spec.ts',
-  '**/smoke/legacy-api.spec.ts',
-  '**/smoke/legacy-ui.spec.ts',
-];
 
 export default defineConfig({
   testDir: 'specs',
   retries: 0,
+  // Required: see src/run-order.ts. The changes-data specs refuse to run otherwise.
   workers: 1,
   reporter: [
     ['list'],
@@ -32,8 +21,14 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
+  // Project order is run order (one worker, see src/run-order.ts).
   projects: [
-    { name: 'read-only', testIgnore: CHANGES_DATA, use: { ...devices['Desktop Chrome'] } },
-    { name: 'changes-data', testMatch: CHANGES_DATA, use: { ...devices['Desktop Chrome'] } },
+    { name: 'read-only', testIgnore: CHANGES_DATA_SPECS, use: { ...devices['Desktop Chrome'] } },
+    { name: CHANGES_DATA_PROJECT, testMatch: CHANGES_DATA_SPECS, use: { ...devices['Desktop Chrome'] } },
+    // Legacy-only smoke checks with Web Forms control IDs and no risk tags. They exist only
+    // when TARGET=legacy, so runs against the modern app and the qa gate never see them.
+    ...(env.target === 'legacy'
+      ? [{ name: 'legacy-smoke', testDir: 'specs-legacy', use: { ...devices['Desktop Chrome'] } }]
+      : []),
   ],
 });

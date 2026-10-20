@@ -11,7 +11,7 @@ export default {
   vitest: { configFile: 'vitest.config.ts', dir: '.' },
   checkers: ['typescript'],
   tsconfigFile: 'tsconfig.json',
-  mutate: ['src/parity/**/*.ts', 'src/gate/**/*.ts'],
+  mutate: ['src/parity/**/*.ts', 'src/gate/**/*.ts', 'src/api/**/*.ts'],
   ignoreStatic: false,
   coverageAnalysis: 'perTest',
   reporters: ['clear-text', 'progress', 'json'],

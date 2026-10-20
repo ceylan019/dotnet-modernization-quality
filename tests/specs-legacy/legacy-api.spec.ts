@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { GraphQLClient } from '../../src/api/graphql-client';
+import { GraphQLClient } from '../src/api/graphql-client';
 import {
   APPLICATION,
   CHANGE_STATUS,
@@ -11,11 +9,10 @@ import {
   PERMIT_TYPES,
   SEARCH,
   SUBMIT,
-} from '../../src/api/operations';
+} from '../src/api/operations';
+import { loadCatalog } from '../src/catalog';
 
-const catalog = JSON.parse(
-  readFileSync(resolve(process.cwd(), 'seed-data/catalog.json'), 'utf8'),
-) as { categories: Record<string, string[]> };
+const catalog = loadCatalog();
 
 interface Envelope {
   data?: Record<string, unknown>;

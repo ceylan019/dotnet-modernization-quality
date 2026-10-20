@@ -1,10 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { loadCatalog } from '../src/catalog';
 
-const catalog = JSON.parse(
-  readFileSync(resolve(process.cwd(), 'seed-data/catalog.json'), 'utf8'),
-) as { categories: Record<string, string[]> };
+const catalog = loadCatalog();
 
 const approvedReference = catalog.categories.statusApproved[0];
 

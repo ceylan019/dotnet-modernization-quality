@@ -1,0 +1,124 @@
+# Legacy GraphQL schema as printed by graphql-js from introspection of the legacy app.
+# Unit tests validate the documents in src/api/operations.ts against it.
+
+scalar Date
+
+scalar DateTime
+
+scalar DateTimeOffset
+
+scalar Seconds
+
+scalar Milliseconds
+
+scalar Decimal
+
+type Query {
+  application(referenceNumber: String!): Application
+  dueDate(permitTypeCode: String!, submittedOn: Date!): Date
+  feeQuote(permitTypeCode: String!, areaSqM: Decimal!, isSenior: Boolean!, isNonProfit: Boolean!): FeeQuote
+  permitTypes: [PermitType]
+  searchApplications(searchText: String = null, status: ApplicationStatus = null, page: Int = 1, pageSize: Int = 20): ApplicationSearchResult
+}
+
+type PermitType {
+  baseFee: Decimal!
+  code: String!
+  name: String!
+  ratePerSqM: Decimal!
+  reviewBusinessDays: Int!
+}
+
+type FeeQuote {
+  feeAmount: Decimal!
+  hstAmount: Decimal!
+  totalAmount: Decimal!
+}
+
+type Application {
+  applicant: Applicant
+  areaSqM: Decimal!
+  description: String
+  dueDate: Date
+  feeAmount: Decimal!
+  history: [StatusChange]
+  hstAmount: Decimal!
+  lastUpdatedAt: DateTime
+  permitType: PermitType
+  referenceNumber: String!
+  siteAddress: String!
+  status: ApplicationStatus
+  submittedAt: DateTime
+  submittedOn: Date
+  totalAmount: Decimal!
+}
+
+type Applicant {
+  email: String
+  firstName: String
+  isNonProfit: Boolean!
+  isSenior: Boolean!
+  lastName: String
+  phone: String
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  INFO_REQUESTED
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+type StatusChange {
+  changedAt: DateTime
+  changedBy: String!
+  fromStatus: String
+  note: String
+  toStatus: String!
+}
+
+type ApplicationSearchResult {
+  items: [ApplicationSummary]
+  page: Int!
+  pageSize: Int!
+  totalCount: Int!
+}
+
+type ApplicationSummary {
+  dueDate: Date
+  firstName: String
+  lastName: String
+  permitTypeCode: String!
+  permitTypeName: String!
+  referenceNumber: String!
+  status: ApplicationStatus
+  submittedOn: Date
+  totalAmount: Decimal!
+}
+
+type Mutation {
+  changeStatus(referenceNumber: String!, newStatus: ApplicationStatus!, changedBy: String!, note: String = null): Application
+  submitApplication(input: ApplicationInput!): SubmitApplicationResult
+}
+
+type SubmitApplicationResult {
+  dueDate: Date
+  feeAmount: Decimal!
+  referenceNumber: String!
+  totalAmount: Decimal!
+}
+
+input ApplicationInput {
+  firstName: String!
+  lastName: String!
+  email: String = null
+  phone: String = null
+  isSenior: Boolean!
+  isNonProfit: Boolean!
+  permitTypeCode: String!
+  siteAddress: String!
+  areaSqM: Decimal!
+  description: String = null
+}

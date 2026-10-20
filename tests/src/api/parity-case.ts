@@ -1,7 +1,8 @@
-import { expect, type TestInfo } from '@playwright/test';
+import type { TestInfo } from '@playwright/test';
+import { loadEnv } from '../config/env';
 import { expectParity } from '../parity/expect-parity';
 import { normalizeResponse, type Json, type VolatileKind } from '../parity/normalize';
-import { apiRequest, collapseTrimmedFractions } from './api-normalize';
+import { apiRequest } from './api-normalize';
 import type { GraphQLClient, GraphQLResponse } from './graphql-client';
 
 export interface ApiCase {
@@ -21,15 +22,26 @@ export function apiTags(risks: readonly string[]): string[] {
   return ['@api', '@parity', ...risks.map((r) => `@${r}`)];
 }
 
+// True while recording legacy baselines. Checks of exact legacy values (message wording, list
+// order) run only then: in compare mode parity owns those values, so an approved difference
+// can accept them.
+export function recording(): boolean {
+  return loadEnv().parityMode === 'record';
+}
+
 // Sends one GraphQL request and compares (or records) its normalized response.
-export async function runApiCase(gql: GraphQLClient, testInfo: TestInfo, c: ApiCase): Promise<GraphQLResponse> {
+export async function runApiCase(
+  gql: Pick<GraphQLClient, 'send'>,
+  testInfo: Pick<TestInfo, 'annotations'>,
+  c: ApiCase,
+): Promise<GraphQLResponse> {
   const res = await gql.send(c.query, c.variables);
-  expectParity(testInfo, {
+  expectParity(testInfo as TestInfo, {
     suite: c.suite,
     caseId: c.caseId,
     risks: c.risks,
     request: apiRequest(c.query, c.recordedVariables ?? c.variables),
-    actual: collapseTrimmedFractions(normalizeResponse(res, c.volatile)),
+    actual: normalizeResponse(res, c.volatile),
   });
   return res;
 }
@@ -39,17 +51,25 @@ interface Envelope {
   errors?: { message?: unknown }[];
 }
 
-// Plausibility checks next to parity, so a record run cannot quietly store a broken response.
-export function expectData(res: GraphQLResponse): Record<string, unknown> {
-  expect(res.status, res.raw).toBe(200);
-  const body = res.body as Envelope | null;
-  expect(body?.errors, res.raw).toBeUndefined();
-  expect(body?.data, res.raw).toBeTruthy();
-  return body!.data!;
+// A body that is not JSON is null; property reads on any other JSON value are safe.
+function envelope(res: GraphQLResponse): Envelope {
+  return (res.body ?? {}) as Envelope;
 }
 
+// Holds in both modes: an HTTP 200 answer with data and no errors.
+export function expectData(res: GraphQLResponse): Record<string, unknown> {
+  const body = envelope(res);
+  if (res.status !== 200 || body.errors !== undefined || !body.data) {
+    throw new Error(`Expected data without errors (HTTP 200), got HTTP ${res.status}: ${res.raw}`);
+  }
+  return body.data;
+}
+
+// Holds in both modes: at least one GraphQL error. Returns the messages.
 export function expectErrors(res: GraphQLResponse): string[] {
-  const body = res.body as Envelope | null;
-  expect(Array.isArray(body?.errors) && body!.errors!.length > 0, res.raw).toBe(true);
-  return body!.errors!.map((e) => String(e.message ?? ''));
+  const errors = envelope(res).errors;
+  if (!Array.isArray(errors) || errors.length === 0) {
+    throw new Error(`Expected GraphQL errors, got HTTP ${res.status}: ${res.raw}`);
+  }
+  return errors.map((e) => String(e?.message ?? ''));
 }

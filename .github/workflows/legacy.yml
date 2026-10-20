@@ -156,10 +156,12 @@ jobs:
             throw "Default.aspx did not return HTTP 200 within 90 seconds"
           }
 
+      # smoke.spec.ts plus the Web Forms checks in specs-legacy/. The legacy-smoke project
+      # exists only with TARGET=legacy; naming it fails the step if it ever goes missing.
       - name: Run the smoke suite
         if: inputs.mode != 'record'
         working-directory: tests
-        run: npm run test:smoke
+        run: npx playwright test --project read-only --project legacy-smoke --grep "@smoke"
 
       # Record mode: two passes against a freshly seeded database, then a diff that
       # may only find recordedAt. Official baselines come from this job only.

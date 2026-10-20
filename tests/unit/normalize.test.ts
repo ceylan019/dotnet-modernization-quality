@@ -95,8 +95,14 @@ it('flags non-string values at a volatile path', () => {
 
 it('replaces valid ISO timestamps and flags others', () => {
   const v = { t: 'timestamp' } as const;
-  for (const good of ['2026-10-15T10:20:30Z', '2026-10-15T10:20:30.123Z', '2026-10-15T10:20:30+02:00', '2026-10-15T10:20:30', '2026-10-15T10:20:30.1234567']) {
-    expect(norm(ok({ t: good }), v).data).toEqual({ t: `<timestamp ${good.replace(/\d/g, 'd')}>` });
+  for (const [good, shape] of [
+    ['2026-10-15T10:20:30Z', 'dddd-dd-ddTdd:dd:dd[.ddd]Z'],
+    ['2026-10-15T10:20:30.123Z', 'dddd-dd-ddTdd:dd:dd[.ddd]Z'],
+    ['2026-10-15T10:20:30+02:00', 'dddd-dd-ddTdd:dd:dd[.ddd]+dd:dd'],
+    ['2026-10-15T10:20:30', 'dddd-dd-ddTdd:dd:dd[.ddd]'],
+    ['2026-10-15T10:20:30.1234567', 'dddd-dd-ddTdd:dd:dd.ddddddd'],
+  ]) {
+    expect(norm(ok({ t: good }), v).data).toEqual({ t: `<timestamp ${shape}>` });
   }
   for (const bad of ['2026-10-15', 'yesterday', '2026-13-15T10:20:30Z', '2026-10-15T25:20:30Z', ' 2026-10-15T10:20:30Z', '2026-10-15T10:20:30Z ', '15/10/2026 10:20', 'x2026-10-15T10:20:30Z']) {
     expect(norm(ok({ t: bad }), v).data).toEqual({ t: `<invalid timestamp: ${bad}>` });
@@ -109,12 +115,12 @@ it('supports [*] for array items and nested wildcards', () => {
   expect(r.data).toEqual({
     keep: 'PRM-2026-000009',
     permits: [
-      { at: '<timestamp dddd-dd-ddTdd:dd:ddZ>', other: 'a', ref: '<referenceNumber>' },
+      { at: '<timestamp dddd-dd-ddTdd:dd:dd[.ddd]Z>', other: 'a', ref: '<referenceNumber>' },
       { at: '<invalid timestamp: nope>', other: 'b', ref: '<referenceNumber>' },
     ],
   });
   const nested = norm(ok({ g: [[{ t: '2026-10-15T00:00:00Z' }]] }), { 'g[*][*].t': 'timestamp' });
-  expect(nested.data).toEqual({ g: [[{ t: '<timestamp dddd-dd-ddTdd:dd:ddZ>' }]] });
+  expect(nested.data).toEqual({ g: [[{ t: '<timestamp dddd-dd-ddTdd:dd:dd[.ddd]Z>' }]] });
 });
 
 it('ignores volatile paths that are absent or hit the wrong shape', () => {
@@ -148,14 +154,18 @@ it('rejects impossible calendar dates and out of range times in timestamps', () 
   for (const bad of ['2026-02-30T10:00:00Z', '2026-04-31T10:00:00Z', '2026-00-10T10:00:00Z', '2026-10-00T10:00:00Z', '2026-10-32T10:00:00Z', '2026-10-15T10:60:00Z', '2026-10-15T10:00:60Z', '2026-10-15T10:00:00+24:00', '2026-10-15T10:00:00+02:60', '2026-10-15T10:00Z']) {
     expect(norm(ok({ t: bad }), v).data).toEqual({ t: `<invalid timestamp: ${bad}>` });
   }
-  for (const good of ['2028-02-29T10:00:00Z', '2026-10-31T23:59:59-05:30', '2026-01-01T00:00:00']) {
-    expect(norm(ok({ t: good }), v).data).toEqual({ t: `<timestamp ${good.replace(/\d/g, 'd')}>` });
+  for (const [good, shape] of [
+    ['2028-02-29T10:00:00Z', 'dddd-dd-ddTdd:dd:dd[.ddd]Z'],
+    ['2026-10-31T23:59:59-05:30', 'dddd-dd-ddTdd:dd:dd[.ddd]-dd:dd'],
+    ['2026-01-01T00:00:00', 'dddd-dd-ddTdd:dd:dd[.ddd]'],
+  ]) {
+    expect(norm(ok({ t: good }), v).data).toEqual({ t: `<timestamp ${shape}>` });
   }
 });
 
 it('supports a leading [*] on array data', () => {
   const r = norm(ok([{ t: '2026-10-15T00:00:00Z' }, { t: 'x' }]), { '[*].t': 'timestamp' });
-  expect(r.data).toEqual([{ t: '<timestamp dddd-dd-ddTdd:dd:ddZ>' }, { t: '<invalid timestamp: x>' }]);
+  expect(r.data).toEqual([{ t: '<timestamp dddd-dd-ddTdd:dd:dd[.ddd]Z>' }, { t: '<invalid timestamp: x>' }]);
 });
 
 it('keeps error path segments as they are', () => {
@@ -216,15 +226,27 @@ it('does not coerce a non-string message, and a missing message differs from an 
   expect(normalizeResponse({ status: 200, body: { errors: [{ message: null }] } })).toEqual({ errors: [{ message: '<invalid message: null>' }], status: 200 });
 });
 
-it('keeps offset and fractional precision visible through the timestamp placeholder', () => {
+it('keeps offset and sub-millisecond precision visible through the timestamp placeholder', () => {
   const v = { t: 'timestamp' } as const;
   const n = (t: string) => normalizeResponse(ok({ t }), v);
-  expect(n('2026-10-20T05:35:12.123+00:00')).toEqual({ data: { t: '<timestamp dddd-dd-ddTdd:dd:dd.ddd+dd:dd>' }, status: 200 });
+  expect(n('2026-10-20T05:35:12.123+00:00')).toEqual({ data: { t: '<timestamp dddd-dd-ddTdd:dd:dd[.ddd]+dd:dd>' }, status: 200 });
   expect(diffJson(n('2026-10-20T05:35:12Z'), n('2026-10-20T05:35:12'))).toHaveLength(1);
   expect(diffJson(n('2026-10-20T05:35:12Z'), n('2026-10-20T05:35:12+00:00'))).toHaveLength(1);
+  expect(diffJson(n('2026-10-20T05:35:12.123Z'), n('2026-10-20T05:35:12.1234Z'))).toHaveLength(1);
   expect(diffJson(n('2026-10-20T05:35:12.123Z'), n('2026-10-20T05:35:12.1234567Z'))).toHaveLength(1);
-  expect(diffJson(n('2026-10-20T05:35:12Z'), n('2026-10-20T05:35:12.000Z'))).toHaveLength(1);
   expect(diffJson(n('2026-10-20T05:35:12.123Z'), n('2031-01-02T23:01:59.987Z'))).toEqual([]);
+});
+
+// Legacy writes milliseconds with trailing zeros dropped, so .770 arrives as .77 and .000 as
+// nothing at all. Zero to three fraction digits are one shape.
+it('treats a fraction of zero to three digits as one shape', () => {
+  const v = { t: 'timestamp' } as const;
+  const n = (t: string) => normalizeResponse(ok({ t }), v);
+  for (const t of ['2026-10-20T10:35:56', '2026-10-20T10:35:56.7', '2026-10-20T10:35:56.77', '2026-10-20T10:35:56.767']) {
+    expect(n(t)).toEqual({ data: { t: '<timestamp dddd-dd-ddTdd:dd:dd[.ddd]>' }, status: 200 });
+  }
+  expect(n('2026-10-20T10:35:56.7671')).toEqual({ data: { t: '<timestamp dddd-dd-ddTdd:dd:dd.dddd>' }, status: 200 });
+  expect(n('2026-10-20T10:35:56.7671-04:00')).toEqual({ data: { t: '<timestamp dddd-dd-ddTdd:dd:dd.dddd-dd:dd>' }, status: 200 });
 });
 
 it('keeps keys named like Object.prototype members, including __proto__', () => {

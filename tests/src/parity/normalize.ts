@@ -4,11 +4,22 @@ export type VolatileKind = 'referenceNumber' | 'timestamp';
 const REFERENCE = /^PRM-\d{4}-\d{6}$/;
 const ISO_DATE_TIME = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)?$/;
 
-function isIsoDateTime(value: string): boolean {
+// The match of a valid ISO 8601 date-time (group 5 is the fraction, group 6 the offset).
+function isoDateTime(value: string): RegExpExecArray | undefined {
   const m = ISO_DATE_TIME.exec(value);
-  if (!m) return false;
+  if (!m) return undefined;
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  return new Date(Date.UTC(year, month - 1, day)).getUTCDate() === day;
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDate() === day ? m : undefined;
+}
+
+// Digits become d, so offset drift stays visible while the instant is ignored. A fraction of
+// up to three digits shows as [.ddd]: the legacy API writes milliseconds with trailing zeros
+// dropped (12:00:00.12 for .120, 12:00:00 for .000), so the digit count of a time created
+// during the run changes from run to run. Four or more fraction digits stay visible.
+function timestampShape(m: RegExpExecArray): string {
+  const fraction = m[5] ?? '';
+  const shownFraction = fraction.length <= 4 ? '[.ddd]' : fraction.replace(/\d/g, 'd');
+  return `dddd-dd-ddTdd:dd:dd${shownFraction}${(m[6] ?? '').replace(/\d/g, 'd')}`;
 }
 
 // Own keys only, sorted. fromEntries keeps a key named __proto__ as a key.
@@ -25,12 +36,12 @@ function show(value: unknown): string {
   return JSON.stringify(value) ?? String(value);
 }
 
-// The timestamp placeholder keeps the shape of the value (digits become d), so a change of
-// offset or fractional precision stays visible while the instant itself is ignored.
+// The timestamp placeholder keeps the shape of the value (see timestampShape).
 function placeholder(kind: VolatileKind, value: Json): string {
   if (typeof value === 'string') {
     if (kind === 'referenceNumber' && REFERENCE.test(value)) return '<referenceNumber>';
-    if (kind === 'timestamp' && isIsoDateTime(value)) return `<timestamp ${value.replace(/\d/g, 'd')}>`;
+    const m = kind === 'timestamp' ? isoDateTime(value) : undefined;
+    if (m) return `<timestamp ${timestampShape(m)}>`;
   }
   const shown = typeof value === 'string' ? value : JSON.stringify(value);
   return `<invalid ${kind}: ${shown}>`;
