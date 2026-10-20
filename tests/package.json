@@ -8,12 +8,17 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
     "db:legacy:reset": "tsx --env-file-if-exists=../.env src/db/reset-legacy-db.ts",
+    "test:unit": "vitest run unit/",
+    "test:db": "vitest run db/",
     "test:e2e": "playwright test",
     "test:smoke": "playwright test --grep @smoke",
+    "test:parity": "playwright test --grep @parity",
+    "test:mutation": "stryker run",
+    "gate": "tsx src/gate/gate-cli.ts",
     "seed:small": "tsx src/seed/generate.ts --size small --out seed-data",
     "seed:large": "tsx src/seed/generate.ts --size large --out reports/seed-large",
-    "test:unit": "vitest run unit/",
     "risks:md": "tsx src/gate/risk-register-md.ts"
   },
   "dependencies": {
@@ -22,11 +27,15 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.1",
     "@types/mssql": "12.3.0",
     "@types/node": "22.20.5",
+    "allure-playwright": "3.14.0",
+    "eslint": "10.13.0",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0",
     "vitest": "5.0.5"
   }
 }

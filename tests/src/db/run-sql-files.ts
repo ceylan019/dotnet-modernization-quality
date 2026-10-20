@@ -7,7 +7,7 @@ const GO_LINE = /^\s*GO\s*$/i;
 function splitBatches(script: string): string[] {
   const batches: string[] = [];
   let current: string[] = [];
-  for (const line of script.replace(/^﻿/, '').split(/\r?\n/)) {
+  for (const line of script.replace(/^\uFEFF/, '').split(/\r?\n/)) {
     if (GO_LINE.test(line)) {
       batches.push(current.join('\n'));
       current = [];

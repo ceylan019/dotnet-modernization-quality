@@ -27,6 +27,7 @@ async function run(client: GraphQLClient, query: string, variables?: Record<stri
   expect(result.status, result.raw).toBe(200);
   const body = result.body as Envelope;
   expect(body.errors, result.raw).toBeUndefined();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return body.data as Record<string, any>;
 }
 

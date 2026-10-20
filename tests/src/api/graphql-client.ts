@@ -17,7 +17,7 @@ export class GraphQLClient {
       data: { query, variables },
     });
     const raw = await response.text();
-    let body: unknown = null;
+    let body: unknown;
     try {
       body = JSON.parse(raw);
     } catch {
