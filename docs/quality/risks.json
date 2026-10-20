@@ -1,0 +1,372 @@
+[
+  {
+    "id": "RISK-FEE-01",
+    "title": "Fee halves round differently (T-SQL `ROUND` turns 175.145 into 175.15, .NET `Math.Round` into 175.14)",
+    "area": "Fees",
+    "likelihood": 3,
+    "impact": 3,
+    "detection": "Fee quote parity for every active type × areas 1.00, 10.70, 99.99, 250.00, 10000.00 × four discount combinations, plus every `roundingHalfAreas` probe in the catalog (`specs/api/fee-quote.spec.ts`); Apply preview parity; Stryker.NET on the modern fee rule.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-FEE-02",
+    "title": "Discount precedence or HST order changes totals (non-profit beats senior, never stacked; HST on the rounded fee)",
+    "area": "Fees",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "The fee quote matrix includes senior plus non-profit (RENO 100 m²: 192.50 + 25.03 = 217.53); `application` parity on stored amounts of the `roundingHalfFee` and `unroundedMoney` records; amounts of each new submission in `specs/api/workflow.spec.ts`.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-DATE-01",
+    "title": "Due dates skip weekends and holidays differently (padded `to_char` day names, `DOW` numbering, the `Holidays` table)",
+    "area": "Dates",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "Due date parity for every `dueDateProbes` date (weekends, the day before and after each 2024 to 2027 holiday, leap day, year ends) × every active type (`specs/api/due-date.spec.ts`); due dates on search rows, detail pages and the Apply preview.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-DATE-02",
+    "title": "Today is not Toronto's today in a Linux container (UTC clock, Windows time zone ID `Eastern Standard Time`)",
+    "area": "Dates",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "Parity pins `App__FixedToday`, so it proves date arithmetic, not the clock. A clock check starts the modern image without it and with `TZ=Pacific/Kiritimati`, submits, and expects `submittedOn` to equal today in America/Toronto as computed by the test.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-DATE-03",
+    "title": "Expiry flips at the 180 day boundary (`DATEDIFF(day)` counts midnights, intervals and `TimeSpan.Days` count hours)",
+    "area": "Dates",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "`application` parity on the five `expiryBoundary` records (either side of midnight on the boundary day, `Submitted` and `InfoRequested`); search parity with the `EXPIRED` and `SUBMITTED` filters; `changeStatus` on an expired record.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-SEARCH-01",
+    "title": "Name search becomes case-sensitive (PostgreSQL `LIKE`, or `ILIKE` that cannot fold accented capitals)",
+    "area": "Search",
+    "likelihood": 3,
+    "impact": 2,
+    "detection": "Search parity for `tremblay`, `TREMBLAY`, `macdonald` (the `mixedCaseNames` records) and `HÉLÈNE` × status filters × pages 1 and 2 (`specs/api/search.spec.ts`); UI search parity for `tremblay` and `MacDonald`.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-SEARCH-02",
+    "title": "Lookups with trailing spaces stop matching (SQL Server `=` ignores them, PostgreSQL `=` does not)",
+    "area": "Search",
+    "likelihood": 3,
+    "impact": 2,
+    "detection": "`application` parity for each `trailingSpaceNames` reference with a space appended; search parity for `Tremblay ` (where `LIKE` keeps the space significant); the normalizer never trims, so a stored `Tremblay ` returned as `Tremblay` is a difference.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-SEARCH-03",
+    "title": "Accent handling in search changes (legacy is accent-sensitive; encoding loss or `unaccent` changes the matches)",
+    "area": "Search",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "Search parity for `Tremblé` (must not match `Tremblay`), `cote` and `Côté` against the `accentedNames` records; detail and API parity on accented names and the `varcharAddressAccents` addresses.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-ORDER-01",
+    "title": "Lists lose their implicit order (no `ORDER BY` for permit types or status history)",
+    "area": "Ordering",
+    "likelihood": 3,
+    "impact": 2,
+    "detection": "`permitTypes` parity and Apply permit type option parity (legacy order `DECK, DEMO, EVENT, PATIO, RENO, SIGN`); `history` order in `application` parity for `multiStepHistory` and after each workflow step. Arrays are compared by index, never sorted.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-ORDER-02",
+    "title": "Paging shuffles ties or changes `totalCount` (sort by `SubmittedAt` only, count from `COUNT(*) OVER()`)",
+    "area": "Ordering",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "Search parity on pages 1 and 2 for every term and filter, covering the five `submittedAtTies` records, plus one page past the end (legacy reports `totalCount` 0 there); two Windows recordings diffed to prove legacy order is stable first.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-WF-01",
+    "title": "Status rules or business errors change (allowed transitions, check order, `RAISERROR` 50000 vs `RAISE` P0001)",
+    "area": "Workflow",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "`specs/api/workflow.spec.ts`: a valid path through every status, each invalid transition, each error in check order, blank and whitespace-only notes, a change on an expired record, with `application` and `history` compared after each step; Review page message parity.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-REF-01",
+    "title": "Reference numbers change format or collide (`PRM-yyyy-` plus six digits from the identity, continued after migration)",
+    "area": "Reference numbers",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "Workflow parity submits on a database that already holds the seed, so an identity left behind the migrated maximum fails; each new reference must match `PRM-\\d{4}-\\d{6}` or the normalizer marks it `<invalid referenceNumber>`.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-API-01",
+    "title": "GraphQL schema changes break partner clients (type and field names, enum values, nullability, arguments)",
+    "area": "API",
+    "likelihood": 3,
+    "impact": 3,
+    "detection": "`specs/api/contract.spec.ts` builds both schemas from introspection with `buildClientSchema` and fails on any `findBreakingChanges` entry that is not an approved difference; every document in `operations.ts` runs against both apps.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-API-02",
+    "title": "GraphQL error shape, messages or HTTP status codes change",
+    "area": "API",
+    "likelihood": 3,
+    "impact": 2,
+    "detection": "Parity of HTTP status and normalized `errors` (first line of each message, path) for every business error in the fee and workflow suites, an unknown reference, a malformed body (legacy: 400 `Invalid request`) and a query with an unknown field.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-API-03",
+    "title": "Scalars serialize differently (`Date`, date-times, `Decimal`, money read with four decimal places)",
+    "area": "API",
+    "likelihood": 3,
+    "impact": 2,
+    "detection": "API parity compares JSON types as well as values (`175.15` and `\"175.15\"` differ) for every date, date-time, area and amount field; volatile timestamps must still parse as ISO 8601 or the normalizer marks them invalid.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-UI-01",
+    "title": "Page behavior changes when postbacks and ViewState become Blazor forms, links and one interactive island",
+    "area": "UI",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "UI suites through the shared `AppDriver` (`specs/ui/`): search and paging, Apply preview and submit, detail with history and not found, review change; displayed values compared to the legacy baselines.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-UI-02",
+    "title": "Money and dates render in the wrong culture (`en-CA` `$175.15` vs invariant `¤175.15`)",
+    "area": "UI",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "UI value parity compares displayed strings exactly: search totals and dates, detail amounts of the `unroundedMoney` records (`88.1234` shows as `$88.12`), Apply preview amounts and due date.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-UI-03",
+    "title": "Validation messages change wording or disappear",
+    "area": "UI",
+    "likelihood": 3,
+    "impact": 1,
+    "detection": "UI parity of validation messages for an empty submit and for area `0`; API parity of `Validation failed: ...` errors from `submitApplication`.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-A11Y-01",
+    "title": "Pages have serious or critical WCAG 2.1 AA violations (axe), or are worse than legacy",
+    "area": "Accessibility",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "`specs/a11y/axe.spec.ts` on every page of both apps: zero serious or critical violations in the modern app, and no page with more than its legacy counterpart (legacy findings recorded on Windows).",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-A11Y-02",
+    "title": "Keyboard order or visible focus breaks on the application form",
+    "area": "Accessibility",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "`specs/a11y/keyboard.spec.ts` tabs through Apply and checks that every field is reached in visual order with a visible focus indicator, including after the fee preview renders.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-A11Y-03",
+    "title": "Pages scroll sideways at 375 px wide",
+    "area": "Accessibility",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "`specs/a11y/reflow.spec.ts`: `document.documentElement.scrollWidth <= 375` at a 375 px viewport on every page, with a full results grid on search.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-A11Y-04",
+    "title": "Landmarks missing or link names ambiguous",
+    "area": "Accessibility",
+    "likelihood": 2,
+    "impact": 1,
+    "detection": "`specs/a11y/landmarks.spec.ts`: exactly one `main` landmark per page, and links that share an accessible name share a target.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-SEC-01",
+    "title": "Names containing markup render as HTML (stored XSS against staff)",
+    "area": "Security",
+    "likelihood": 1,
+    "impact": 3,
+    "detection": "`specs/security/encoding.spec.ts` opens every `htmlInNames` record (`<b>Roy</b>`, `<script>alert('x')</script>`, `\"><img src=x>`) and expects literal text, no injected element and no dialog.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-SEC-02",
+    "title": "Errors leak stack traces or internals",
+    "area": "Security",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "`specs/security/errors.spec.ts` requests every driver `errorProbes` URL and sends a malformed GraphQL query; the response must contain none of `Stack Trace`, `   at `, `System.` or `Exception`.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-SEC-03",
+    "title": "Security headers missing, or server version headers present",
+    "area": "Security",
+    "likelihood": 3,
+    "impact": 2,
+    "detection": "`specs/security/headers.spec.ts` on every page: `x-content-type-options: nosniff`, a `content-security-policy` and a `referrer-policy` present; `x-aspnet-version` and `x-powered-by` absent.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-HEALTH-01",
+    "title": "Pages log console errors (framework script, interactive circuit, antiforgery, CSP)",
+    "area": "Health",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "`specs/security/console.spec.ts` loads every page of both apps and fails on any console error in the modern app; legacy errors are recorded for comparison.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-PERF-02",
+    "title": "Main pages miss Lighthouse budgets",
+    "area": "Performance",
+    "likelihood": 2,
+    "impact": 1,
+    "detection": "Lighthouse CI on the search and Apply pages in qa with budgets performance 0.80, accessibility 0.95, best practices 0.90; legacy scores recorded on Windows for the before and after table.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-TEST-01",
+    "title": "Test logic too forgiving to catch a real difference (normalizers, diff, gate)",
+    "area": "Test tooling",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "Stryker on `src/parity` and `src/gate` with a break threshold of 85; Stryker.NET on the modern fee and due date rules; unit tests pin `\" Roy\"` vs `\"Roy\"`, `\"174.67\"` vs `174.67` and reordered arrays as differences.",
+    "stage": "qa",
+    "status": "open"
+  },
+  {
+    "id": "RISK-DATA-01",
+    "title": "Rows lost or duplicated in the data migration",
+    "area": "Data migration",
+    "likelihood": 1,
+    "impact": 3,
+    "detection": "Migration validation on the 50,000 application rehearsal compares row counts per table for all five tables; zero rows on either side counts as empty evidence and fails.",
+    "stage": "staging",
+    "status": "open"
+  },
+  {
+    "id": "RISK-DATA-02",
+    "title": "Values change in migration (four-place money, unicode, `varchar` code page, `NULL` vs empty, trailing spaces, timestamps)",
+    "area": "Data migration",
+    "likelihood": 3,
+    "impact": 3,
+    "detection": "Per column: non-null counts, exact sums at scale 4 for money and decimals, min and max for dates, length sums and a SHA-256 over text in key order; full comparison of the catalog hazard records.",
+    "stage": "staging",
+    "status": "open"
+  },
+  {
+    "id": "RISK-DATA-03",
+    "title": "Referential integrity or constraints missing after migration",
+    "area": "Data migration",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "Orphan counts per foreign key must be zero, the unique reference and status check must exist in the PostgreSQL catalog, and staging submits one application on the migrated data.",
+    "stage": "staging",
+    "status": "open"
+  },
+  {
+    "id": "RISK-DATA-04",
+    "title": "Migration takes longer than the cutover window",
+    "area": "Data migration",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "Every staging rehearsal records migration plus validation time for 50,000 applications; the gate fails above 10 minutes, and the release plan sizes the cutover window from the recorded time.",
+    "stage": "staging",
+    "status": "open"
+  },
+  {
+    "id": "RISK-PERF-01",
+    "title": "Key journeys too slow on production-sized data (per-row status function, leading wildcard `LIKE`)",
+    "area": "Performance",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "k6 journeys (search, fee quote, application by reference) against the migrated large data: p95 under 500 ms and under 1% failed requests; legacy numbers recorded for reference only.",
+    "stage": "staging",
+    "status": "open"
+  },
+  {
+    "id": "RISK-REL-01",
+    "title": "The released image is not the image that was tested",
+    "area": "Release",
+    "likelihood": 1,
+    "impact": 3,
+    "detection": "The prod job compares the image digest with the one qa and staging tested and refuses to tag or release on a mismatch; the digest is written into the go/no-go record and the GitHub Release.",
+    "stage": "prod",
+    "status": "open"
+  },
+  {
+    "id": "RISK-REL-02",
+    "title": "The released image fails with production configuration",
+    "area": "Release",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "`specs/smoke/smoke.spec.ts` against the released image right after release: home page 200, `permitTypes` not empty, `GET /healthz` 200; the nightly monitor repeats it and opens an issue on failure.",
+    "stage": "prod",
+    "status": "open"
+  },
+  {
+    "id": "RISK-REL-03",
+    "title": "GraphQL introspection is open in prod",
+    "area": "Release",
+    "likelihood": 2,
+    "impact": 2,
+    "detection": "The prod smoke sends the introspection query and expects it refused; the qa contract test proves the same setting turns it on where it is needed.",
+    "stage": "prod",
+    "status": "open"
+  },
+  {
+    "id": "RISK-REL-04",
+    "title": "Rollback does not restore service",
+    "area": "Release",
+    "likelihood": 2,
+    "impact": 3,
+    "detection": "Rollback drill from `v1.0.0` to `v1.0.0-rc.1` by digest, smoke after each step, then roll forward; result and point of no return position recorded in the go/no-go record.",
+    "stage": "prod",
+    "status": "open"
+  }
+]

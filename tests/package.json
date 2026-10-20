@@ -13,11 +13,13 @@
     "test:smoke": "playwright test --grep @smoke",
     "seed:small": "tsx src/seed/generate.ts --size small --out seed-data",
     "seed:large": "tsx src/seed/generate.ts --size large --out reports/seed-large",
-    "test:unit": "vitest run unit/"
+    "test:unit": "vitest run unit/",
+    "risks:md": "tsx src/gate/risk-register-md.ts"
   },
   "dependencies": {
     "@faker-js/faker": "10.6.0",
-    "mssql": "12.7.10"
+    "mssql": "12.7.10",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
