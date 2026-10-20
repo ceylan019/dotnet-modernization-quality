@@ -1,0 +1,92 @@
+{
+  "suites": [
+    {
+      "title": "smoke/legacy-api.spec.ts",
+      "file": "smoke/legacy-api.spec.ts",
+      "specs": [],
+      "suites": [
+        {
+          "title": "legacy GraphQL API",
+          "file": "smoke/legacy-api.spec.ts",
+          "specs": [
+            {
+              "title": "permitTypes",
+              "ok": true,
+              "tags": [
+                "smoke"
+              ],
+              "file": "smoke/legacy-api.spec.ts",
+              "tests": [
+                {
+                  "expectedStatus": "passed",
+                  "status": "expected",
+                  "annotations": [],
+                  "results": [
+                    {
+                      "status": "passed"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "title": "feeQuote",
+              "ok": true,
+              "tags": [
+                "smoke"
+              ],
+              "file": "smoke/legacy-api.spec.ts",
+              "tests": [
+                {
+                  "expectedStatus": "passed",
+                  "status": "expected",
+                  "annotations": [],
+                  "results": [
+                    {
+                      "status": "passed"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "suites": []
+        }
+      ]
+    },
+    {
+      "title": "smoke/legacy-ui.spec.ts",
+      "file": "smoke/legacy-ui.spec.ts",
+      "specs": [],
+      "suites": [
+        {
+          "title": "legacy Web Forms UI",
+          "file": "smoke/legacy-ui.spec.ts",
+          "specs": [
+            {
+              "title": "each page loads with HTTP 200",
+              "ok": true,
+              "tags": [
+                "smoke"
+              ],
+              "file": "smoke/legacy-ui.spec.ts",
+              "tests": [
+                {
+                  "expectedStatus": "passed",
+                  "status": "expected",
+                  "annotations": [],
+                  "results": [
+                    {
+                      "status": "passed"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "suites": []
+        }
+      ]
+    }
+  ]
+}

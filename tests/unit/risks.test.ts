@@ -1,6 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
-import { renderRiskRegister } from '../src/gate/risk-register-md';
+import { isEntrypoint } from '../src/gate/entrypoint';
+import { renderRiskRegister, runRiskRegisterCli } from '../src/gate/risk-register-md';
 import { loadRisks, parseRisks, type Risk } from '../src/gate/risks';
 
 const QA_IDS = [
@@ -141,4 +145,18 @@ it('parseRisks: joins several problems with a semicolon and omits the path for a
 it('loadRisks: names the file it was asked to load', () => {
   expect(() => loadRisks('/nonexistent/risks.json')).toThrow(/ENOENT/);
   expect(loadRisks('../docs/quality/risks.json')).toHaveLength(37);
+});
+
+it('runRiskRegisterCli writes the rendered register to the given file and reports it', () => {
+  const out = join(mkdtempSync(join(tmpdir(), 'rr-')), 'register.md');
+  expect(runRiskRegisterCli([out])).toBe(`Wrote ${out}`);
+  expect(readFileSync(out, 'utf8')).toBe(renderRiskRegister(loadRisks()));
+});
+
+it('isEntrypoint is true only for the script node was started with', () => {
+  const file = join(tmpdir(), 'x.ts');
+  expect(isEntrypoint(file, pathToFileURL(file).href)).toBe(true);
+  expect(isEntrypoint(file, pathToFileURL(join(tmpdir(), 'y.ts')).href)).toBe(false);
+  expect(isEntrypoint(undefined, pathToFileURL(file).href)).toBe(false);
+  expect(isEntrypoint('', pathToFileURL('').href)).toBe(false);
 });

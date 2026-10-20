@@ -1,0 +1,65 @@
+{
+  "suites": [
+    {
+      "title": "tmpx/a.spec.ts",
+      "file": "tmpx/a.spec.ts",
+      "specs": [
+        {
+          "title": "ann one",
+          "ok": true,
+          "tags": [
+            "RISK-FEE-01",
+            "parity"
+          ],
+          "file": "tmpx/a.spec.ts",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "status": "expected",
+              "annotations": [
+                {
+                  "type": "evidence",
+                  "description": "parity=1"
+                },
+                {
+                  "type": "approved-difference",
+                  "description": "AD-1"
+                }
+              ],
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "skipped one",
+          "ok": true,
+          "tags": [
+            "api"
+          ],
+          "file": "tmpx/a.spec.ts",
+          "tests": [
+            {
+              "expectedStatus": "skipped",
+              "status": "skipped",
+              "annotations": [
+                {
+                  "type": "skip"
+                }
+              ],
+              "results": [
+                {
+                  "status": "skipped"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "suites": []
+    }
+  ]
+}

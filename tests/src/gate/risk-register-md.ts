@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { isEntrypoint } from './entrypoint';
 import { loadRisks, type Risk } from './risks';
 
 const STAGES: Risk['stage'][] = ['qa', 'staging', 'prod'];
@@ -51,8 +51,12 @@ export function renderRiskRegister(risks: Risk[]): string {
   ].join('\n');
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const out = process.argv[2] ?? '../docs/quality/risk-register.md';
+export function runRiskRegisterCli(argv: string[]): string {
+  const out = argv[0] ?? '../docs/quality/risk-register.md';
   writeFileSync(out, renderRiskRegister(loadRisks()));
-  console.log(`Wrote ${out}`);
+  return `Wrote ${out}`;
+}
+
+if (isEntrypoint(process.argv[1], import.meta.url)) {
+  console.log(runRiskRegisterCli(process.argv.slice(2)));
 }
