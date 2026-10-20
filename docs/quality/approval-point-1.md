@@ -6,15 +6,17 @@ Written on 2026-10-20 by Claude Code for the owner. Every command runs from the 
 
 ## Before you push
 
-1. **Clean the working tree.** Two untracked leftovers from tonight's local runs must not reach the repository.
+1. **Clean the working tree.** Two untracked leftovers from development must not reach the repository. Delete both.
 
    ```sh
    git switch foundation
-   rm legacy/src/Permits.Web/eb.config     # empty stray file
-   rm -r tests/baselines                   # one stray case file from a local run; official baselines come only from Windows
+   rm legacy/src/Permits.Web/eb.config     # an empty stray file
+   rm -r tests/baselines                   # see below
    git status --short                      # expect no output
    git log --all --format='%an <%ae>' | sort -u   # expect only the GitHub noreply address
    ```
+
+   `tests/baselines/legacy/fee/fee-reno-10.70-senior.json` is not a recorded baseline. It is a sample file a unit test wrote during development (its request is `{"a":1}`), it is untracked, and it sits at the path of a real fee case, so a compare run would read it. Official baselines come only from the Windows record run.
 
 2. **Create the private repository from `main`, then push `foundation`.** `main` holds only the bootstrap commit, with stub workflows: GitHub dispatches a workflow by hand only when it exists on the default branch.
 
@@ -46,7 +48,7 @@ Written on 2026-10-20 by Claude Code for the owner. Every command runs from the 
    ```sh
    gh run list --workflow legacy.yml --limit 1                  # the run ID
    gh run download <run-id> --name legacy-baselines --dir tests/baselines/legacy
-   find tests/baselines/legacy -name '*.json' | wc -l           # 1,200 or more cases, plus the Lighthouse and k6 summaries
+   find tests/baselines/legacy -name '*.json' | wc -l           # at least 400 (the workflow enforces it); about 1,264 cases were recorded locally on the Mono preview, plus the Lighthouse and k6 summaries
    test -f tests/baselines/legacy/schema/introspection.json && echo ok
    grep -rl '<invalid' tests/baselines/legacy                   # expect no output
    ```
@@ -100,7 +102,7 @@ It contains:
 - the legacy app (.NET Framework 4.8 Web Forms, GraphQL.NET 2.4, ADO.NET, SQL Server scripts), built with deliberate migration hazards;
 - deterministic synthetic seed data and its catalog of hazard records;
 - the quality documents: test strategy, risk register, release plan, rollback runbook, approved differences, defect log, go/no-go template, decision records, and the conversion brief;
-- the TypeScript test framework: page drivers, the parity engine, the traceability gate, the API parity suites, smoke tests, k6 journeys, Lighthouse CI and a Bruno collection;
+- the TypeScript test framework: page drivers, the parity engine, the traceability gate, the API, UI, accessibility and security suites, smoke tests, k6 journeys, Lighthouse CI and a Bruno collection;
 - the data migration validator;
 - the legacy baselines recorded on the Windows runner;
 - the pipeline (build, dev, qa) with a placeholder modern app, and the Windows workflow for the legacy app.
@@ -114,7 +116,7 @@ It contains:
 
 Then, more briefly:
 
-5. **Conversion brief** (`docs/conversion/brief.md`). Besides `legacy/`, it is all the conversion agent sees. Check that it gives nothing away about tests, risks or data.
+5. **Conversion brief** (`docs/conversion/brief.md`). Besides `legacy/`, it is all the conversion agent sees. Check that it gives nothing away about tests, risks or data. One question for you: the UI line asks for "the same pages, fields, actions and messages as today". The word "messages" is a mild nudge toward keeping the exact message text, which the UI parity suites compare. Keep it, because a real work order would ask for the same messages, or drop it, so that the brief gives less away?
 6. **Decision records** (`docs/decisions/`). Decision 0006 records what the first Windows runs showed.
 
 ## Decisions this review settles
@@ -124,7 +126,7 @@ The documents propose these values. Merging accepts them:
 - migration plus validation within 10 minutes for 50,000 applications, which sizes the cutover window (strategy, section 8);
 - k6 on the modern app: p95 under 500 ms and under 1% failed requests;
 - Lighthouse budgets: performance 0.80, accessibility 0.95, best practices 0.90;
-- a mutation score break threshold of 85 for the parity and gate code;
+- a mutation score break threshold of 85 for the parity, gate, API case and UI check code;
 - authentication out of scope, because the legacy app has none (strategy, section 2);
 - strict promotion. qa runs only after dev is green, so qa cannot run on GitHub against the placeholder. Section 8 of the strategy asks for build, dev and qa to run end to end against the placeholder before the conversion. Either accept that the first real qa run happens on the conversion pull request, or ask for section 8 to be amended before merging.
 
@@ -132,7 +134,7 @@ The documents propose these values. Merging accepts them:
 
 | Check | Expected | Why |
 |---|---|---|
-| `pipeline / build` | green | Compiles the placeholder, typechecks, lints, runs the unit tests and Stryker (breaks below 85), builds the image once and records its digest |
+| `pipeline / build` | green | Compiles the placeholder, typechecks, lints, runs the unit tests and Stryker on the unit tests only (breaks below 85), builds the image once and records its digest. Nothing in it needs a database or a `.env` file |
 | `pipeline / dev` | **red** | The placeholder answers `GET /healthz` and returns 501 for everything else, so the smoke tests and the GraphQL contract test fail |
 | `pipeline / qa` | skipped | qa needs a green dev. A stage never promotes past a red one |
 | `pipeline / pages` | skipped | The report is published only from a public repository, and never from a pull request |
@@ -140,11 +142,16 @@ The documents propose these values. Merging accepts them:
 
 **The red dev check is expected and is not a reason to hold the merge.** It is the starting line the conversion has to turn green. It must be red only in the step "Smoke and contract tests", with failures that show the 501 answers. A red anywhere else is a pipeline defect to fix before merging: the image load and digest check, the Compose start, the health wait, `npm ci`, or an action version that does not resolve. None of these steps had run on GitHub before this pull request.
 
-qa runs for real for the first time on the conversion pull request. Before that, its gate was run locally over the API suites against a Mono preview of the legacy app, and it refused as designed, listing the qa risks that had no passing test yet. That local run is not evidence for any risk.
+qa runs for real for the first time on the conversion pull request. Before that, its steps were run locally (`docs/quality/local-pipeline-run.md`), with baselines recorded from a Mono preview of the legacy app into a scratch folder:
+
+- against the placeholder, the gate failed closed: 1 of 28 qa risks covered (RISK-TEST-01, from the mutation evidence, which says nothing about the app), 2,406 problems;
+- against the Mono preview itself, every parity test passed and the gate still failed as designed: 20 of 28 qa risks covered. The 12 failing tests are the absolute accessibility and security bars the legacy app fails on purpose, and they keep their 6 risks uncovered; RISK-DATE-02 and RISK-PERF-02 need the converted app.
+
+Neither local run is evidence for any risk.
 
 ## Known gaps at the time of this pull request
 
-- The UI, accessibility and security suites are not written yet.
+- The modern page driver is written after the conversion, so the UI suites fail against the placeholder with the driver's own message.
 - The clock check for RISK-DATE-02 and Stryker.NET on the modern fee and due date rules need the converted app.
 - Lighthouse in the qa stage, and the staging, prod and nightly monitor stages, come after the conversion.
 - The data migration validator has been tested on scratch tables only. Its real mapping is written once the converted schema exists.

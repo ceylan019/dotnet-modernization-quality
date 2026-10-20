@@ -54,8 +54,8 @@ The point: the legacy app runs only on Windows, so it is recorded once on a Wind
 
 Open [`tests/src/gate/traceability.ts`](../../tests/src/gate/traceability.ts) and [`tests/stryker.config.mjs`](../../tests/stryker.config.mjs).
 
-- The gate fails a stage when a risk of that stage has no passing test, a test has no risk tag, a tag names an unknown risk, or a passing test examined nothing. Skipped tests never count, and a record mode run is refused.
-- The most dangerous code in the repository is the test code that decides what counts as equal. Stryker mutates the parity engine and the gate, and the build breaks below a mutation score of 85. Unit tests pin `" Roy"` vs `"Roy"`, `"174.67"` vs `174.67` and a reordered list as differences.
+- A risk counts as covered only when a passing test or check with real evidence names it and no test or check that names it failed. The gate fails a stage when a risk of that stage is not covered, a test or check that names a risk failed, a tag or a check names an unknown risk, a test has no risk tag, or a passing test or check examined nothing. Skipped tests never count, and a record mode run is refused.
+- The most dangerous code in the repository is the test code that decides what counts as equal. Stryker mutates the parity engine, the gate, the API case helpers and the UI checks, and the build breaks below a mutation score of 85. Unit tests pin `" Roy"` vs `"Roy"`, `"174.67"` vs `174.67` and a reordered list as differences.
 
 ## 7. The pipeline (1 minute)
 
@@ -76,7 +76,7 @@ Open [`docs/conversion/brief.md`](../conversion/brief.md), [decision 0001](../de
 
 Open [test-strategy.md, section 13](test-strategy.md#13-known-limits).
 
-- Proven on a Mac: the framework, the database scripts, the API suites against a local preview, the migration validator on scratch tables.
+- Proven on a Mac: the framework, the database scripts, the API, UI, accessibility and security suites against a local preview of the legacy app, the migration validator on scratch tables, and a local run of the build, dev and qa steps against the placeholder ([local pipeline run](local-pipeline-run.md)).
 - Not proven yet: anything on Windows or GitHub, the official baselines, the conversion and every release step. The known limits are written down so nobody mistakes them for coverage.
 
 ## Questions you are likely to get
@@ -88,13 +88,13 @@ A modernization tool knows nothing about your quality plan. If the converting ag
 The legacy app runs only on .NET Framework, so only on a Windows runner, and Windows minutes count double on the free plan. Running both apps for every comparison would tie every pipeline run and every local check to a Windows machine. The legacy app is frozen, so a recording stays valid, and committed baselines are reviewable like code: any change to them is an owner approval ([decision 0002](../decisions/0002-recorded-legacy-baselines.md)).
 
 **What does the traceability gate refuse?**
-A risk of the stage with no passing test, a test with no risk tag, a tag that names a risk not in the register, and a passing test or check that examined nothing (zero parity cases, zero migrated rows). Skipped tests never cover a risk, and it refuses to evaluate a record mode run at all ([decision 0005](../decisions/0005-traceability-with-real-evidence.md)).
+A risk of the stage that is not covered, a failed test or check that names a risk (that risk then counts as uncovered, even if other tests of it passed), a test with no risk tag, a tag or check that names a risk not in the register, and a passing test or check that examined nothing (zero parity cases, zero migrated rows). Skipped tests never cover a risk, and it refuses to evaluate a record mode run at all ([decision 0005](../decisions/0005-traceability-with-real-evidence.md)).
 
 **What is the Mono preview, and what is it not?**
 A Docker image that serves the built Web Forms app on Mono, so the drivers and API suites could be exercised on a Mac before any Windows run. It is not .NET Framework: culture data, error pages, `SqlClient` behavior and Web Forms rendering differ (for example, Mono repeats a database error message on a second line, and it needs a small module to strip extra client ID segments). Nothing it produces is ever a baseline or evidence. Official results come only from the Windows runner.
 
 **What is not proven yet?**
-No workflow has run on GitHub, because the repository is still local. The Windows recipe for the legacy app is written but unproven. There are no official baselines. The UI, accessibility and security suites are not written yet. The conversion, staging, prod, the releases and the rollback drill all come later. The status section of the README keeps this list current.
+No workflow has run on GitHub, because the repository is still local. The Windows recipe for the legacy app is written but unproven. There are no official baselines: the suites were recorded and compared only against the Mono preview, in a scratch folder. The modern page driver is written after the conversion, against whatever markup it produces. The conversion, staging, prod, the releases and the rollback drill all come later. The status section of the README keeps this list current.
 
 **You built the legacy app and the tests. Didn't you plant the bugs?**
 The hazards are planted, openly, and the README lists them. The defects are not: a defect is only what a test catches in the converted code, during a real run, with a link to that run. The guards are the blind, single conversion and a defect log that records only real catches. If the conversion handles every hazard correctly, the write-up will say so rather than invent failures. The strategy names this as a known limit (section 13).

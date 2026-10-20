@@ -23,7 +23,7 @@ Versions follow semantic versioning. A fix after `v1.0.0` ships as a patch versi
 
 | Environment | Question it answers | Data | Introspection | Promotion into it |
 |---|---|---|---|---|
-| dev | Does the image start and speak the contract? | Small seed (408 applications) | On | Automatic after build |
+| dev | Does the image start and speak the contract? | Small seed (407 applications) | On | Automatic after build |
 | qa | Does it behave like the legacy app? | Small seed | On | Automatic after dev |
 | staging | Does the data survive the move, fast enough? | Large seed (50,000 applications) migrated from SQL Server by the migration script | Off | Automatic after qa |
 | prod | Is this exactly what we tested, and does it run with production configuration? | Production configuration, no fixed date | Off | Owner approval on the GitHub Environment |

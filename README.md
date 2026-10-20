@@ -4,7 +4,7 @@
 
 An AI coding agent will convert a small legacy permit system from .NET Framework 4.8 (Web Forms, GraphQL, SQL Server) to .NET 10, Blazor and PostgreSQL. This repository is the quality engineering that decides whether that conversion can ship: a risk register written before any code moves, tests that pin down how the old system really behaves, proof that the new system matches it, and a gated release through four environments.
 
-**Status, 2026-10-20:** the legacy app, the quality plan and most of the test framework are built and checked on a Mac. Nothing has run on GitHub yet, and the conversion waits for the owner's approval. [Details](#status)
+**Status, 2026-10-20:** the legacy app, the quality plan and the test framework for the foundation are built and checked on a Mac. Nothing has run on GitHub yet, and the conversion waits for the owner's approval. [Details](#status)
 
 The short version:
 
@@ -12,7 +12,7 @@ The short version:
 - The conversion runs **once, blind**: a separate agent session sees the legacy source and a short brief, never the tests, the risks or the data.
 - **One test, two apps.** Every check is written once and runs against the legacy app or the modern one.
 - Legacy behavior is **recorded on a Windows runner and committed** as baselines. The modern app is compared against them everywhere else.
-- A **traceability gate** fails a stage when any risk lacks a passing test with real evidence behind it, and the gate's own code is mutation tested.
+- A **traceability gate** fails a stage when any risk lacks a passing test with real evidence behind it, or anything that names the risk failed, and the gate's own code is mutation tested.
 - **Free tools only.** No AWS account, no Kiro, no AWS Transform.
 
 ## The story
@@ -93,8 +93,8 @@ flowchart LR
 - **Recorded baselines.** The legacy app runs only on .NET Framework, so only on Windows. A manual workflow records its normalized responses, twice, and fails if the two recordings differ in anything but the timestamp. The baselines are committed and reviewed like code. Every other run compares the modern app against them on Linux or a Mac, and a missing baseline fails the test. Recording refuses any target but the legacy app ([decision 0002](docs/decisions/0002-recorded-legacy-baselines.md)).
 - **A normalizer that forgives almost nothing.** Before comparing, only key order, the first line of error messages and volatile values (new reference numbers, timestamps) are normalized, and volatile values are replaced only when they have the expected format. A trimmed space, a number sent as a string or a reordered list is a difference.
 - **Approved differences.** Where the modern app should differ (a legacy security flaw fixed on purpose), the owner approves a narrow entry with a reason in [`approved-differences.json`](tests/approved-differences.json). The list starts empty. See [approved differences](docs/quality/approved-differences.md).
-- **A traceability gate that refuses empty evidence.** Every risk has an ID and every test carries the IDs it covers as tags. The [gate](tests/src/gate/traceability.ts) fails a stage when a risk has no passing test, a test has no risk tag, a tag names an unknown risk, or a passing test examined nothing (a parity run that compared zero cases, a migration check that saw zero rows). Skipped tests never count, and a record mode run is refused outright ([decision 0005](docs/decisions/0005-traceability-with-real-evidence.md)).
-- **Mutation testing of the gate itself.** A forgiving normalizer would turn every parity test green while proving nothing. Stryker mutates the parity engine and the gate, and the build fails below a mutation score of 85.
+- **A traceability gate that refuses empty evidence.** Every risk has an ID and every test carries the IDs it covers as tags. A risk counts as covered only when a passing test or check with real evidence names it and no test or check that names it failed. The [gate](tests/src/gate/traceability.ts) fails a stage when a risk of that stage is not covered, a test or check that names a risk failed, a tag or a check names an unknown risk, a test has no risk tag, or a passing test or check examined nothing (a parity run that compared zero cases, a migration check that saw zero rows). Skipped tests never count, and a record mode run is refused outright ([decision 0005](docs/decisions/0005-traceability-with-real-evidence.md)).
+- **Mutation testing of the gate itself.** A forgiving normalizer would turn every parity test green while proving nothing. Stryker mutates the parity engine, the gate, the API case helpers and the UI checks (`src/parity`, `src/gate`, `src/api`, `src/ui`), and the build fails below a mutation score of 85.
 - **Build once, promote by digest.** The image is built once. Every later stage checks the digest before testing, and prod refuses to release anything else ([decision 0003](docs/decisions/0003-build-once-promote-by-digest.md)).
 
 ## Environments and gates
@@ -109,7 +109,7 @@ Each environment exists only while its pipeline stage runs.
 | staging | Linux | Load SQL Server with 50,000 applications, migrate, validate, then smoke and k6 on the migrated data | Validation green, migration within 10 minutes, p95 under 500 ms | After the conversion |
 | prod | Linux | Owner approval, digest check, version tag, GitHub Release with the go/no-go record, smoke | Owner approves, digest matches | After the conversion |
 | nightly monitor | Linux | Smoke against the released image; opens an issue on failure | Not a gate | After the first release |
-| legacy | Windows, by hand | Build and run the legacy app with SQL Server; smoke, or record the baselines | Owner reviews and commits the baselines (approval point 2) | Written; first run after the push |
+| legacy | Windows, by hand, and on pushes that touch `legacy/**` (smoke only) | Build and run the legacy app with SQL Server; smoke, or record the baselines | Owner reviews and commits the baselines (approval point 2) | Written; first run after the push |
 
 ## Run it locally on a Mac
 
@@ -125,7 +125,7 @@ cp .env.example .env                     # throwaway passwords for local contain
 ```sh
 (cd tests && npm run typecheck && npm run lint)
 (cd tests && npm run test:unit)          # parity engine, gate, seed, migration validator logic
-(cd tests && npm run test:mutation)      # Stryker on the parity engine and the gate
+(cd tests && npm run test:mutation)      # Stryker on src/parity, src/gate, src/api and src/ui, unit tests only
 ```
 
 **The legacy database** in Docker, with its characterization tests and the migration validator tests:
@@ -144,7 +144,7 @@ docker compose --profile legacy-db up -d --wait mssql
 (cd tests && npm run db:legacy:reset -- --seed small)
 docker compose --profile legacy-preview up -d --wait --build legacy-preview
 open http://localhost:8081/Default.aspx
-(cd tests && TARGET=legacy BASE_URL=http://localhost:8081 npm run test:smoke)
+(cd tests && TARGET=legacy BASE_URL=http://localhost:8081 npx playwright test --project read-only --project legacy-smoke --grep @smoke)
 ```
 
 <details>
@@ -154,10 +154,10 @@ Recorded files go to a temporary folder outside the repository. Never record int
 
 ```sh
 scratch="$(mktemp -d)"
-(cd tests && TARGET=legacy BASE_URL=http://localhost:8081 PARITY_MODE=record BASELINES_DIR="$scratch" npx playwright test specs/api)
+(cd tests && TARGET=legacy BASE_URL=http://localhost:8081 PARITY_MODE=record BASELINES_DIR="$scratch" npx playwright test specs/)
 (cd tests && npm run db:legacy:reset -- --seed small)
 docker compose --profile legacy-preview up -d --wait --force-recreate --no-deps legacy-preview
-(cd tests && TARGET=legacy BASE_URL=http://localhost:8081 BASELINES_DIR="$scratch" npx playwright test specs/api)
+(cd tests && TARGET=legacy BASE_URL=http://localhost:8081 BASELINES_DIR="$scratch" npx playwright test specs/)
 ```
 
 </details>
@@ -185,18 +185,17 @@ Built, and checked on a Mac with Docker and the Mono preview:
 - the legacy app (four Web Forms pages, a GraphQL API with five queries and two mutations, ADO.NET over stored procedures), its SQL Server database and characterization tests;
 - deterministic synthetic seed data with a catalog of hazard records;
 - the quality documents and seven decision records, as drafts for the owner's review;
-- the test framework: parity engine, traceability gate, about 1,200 API parity cases (fees, due dates, search, lookups, workflow, GraphQL errors and schema), smoke tests, k6 journeys, Lighthouse CI configuration and a Bruno collection. The API cases were recorded and compared against the Mono preview in a scratch folder only;
+- the test framework: parity engine, traceability gate, the API parity suites (fees, due dates, search, lookups, workflow, GraphQL errors and schema), the UI, accessibility and security suites through the page drivers, smoke tests, k6 journeys, Lighthouse CI configuration and a Bruno collection. About 1,264 cases were recorded and compared against the Mono preview, in a scratch folder only; the Windows record run requires at least 400;
 - the data migration validator, tested between SQL Server and PostgreSQL on scratch tables (the real mapping is written once the converted schema exists);
-- the pipeline (build, dev, qa) and the Windows workflow for the legacy app, written and clean under actionlint.
+- the pipeline (build, dev, qa) and the Windows workflow for the legacy app, written and clean under actionlint. The build, dev and qa steps were run by hand against the placeholder ([local pipeline run](docs/quality/local-pipeline-run.md)), and the Windows smoke step against the Mono preview.
 
 Next, in order:
 
-1. The UI, accessibility and security suites, through the page drivers.
-2. The owner pushes to a private GitHub repository. The first Windows runs prove the legacy recipe, which is unproven until then ([decision 0006](docs/decisions/0006-legacy-runs-on-windows-runners.md)).
-3. The official legacy baselines, recorded on Windows and reviewed by the owner (approval point 2).
-4. Approval point 1: the owner merges the foundation pull request ([what to review](docs/quality/approval-point-1.md)).
-5. The blind conversion, once. The dev and qa stages catch what they catch, and every defect goes into the log.
-6. The switch to a public repository (the prod approval needs it), then staging and prod, the releases `v1.0.0-rc.1` and `v1.0.0` (approval point 3 for each), and a rollback drill.
+1. The owner pushes to a private GitHub repository. The first Windows runs prove the legacy recipe, which is unproven until then ([decision 0006](docs/decisions/0006-legacy-runs-on-windows-runners.md)).
+2. The official legacy baselines, recorded on Windows and reviewed by the owner (approval point 2).
+3. Approval point 1: the owner merges the foundation pull request ([what to review](docs/quality/approval-point-1.md)).
+4. The blind conversion, once. The modern page driver is written against its markup, then the dev and qa stages catch what they catch, and every defect goes into the log.
+5. The switch to a public repository (the prod approval needs it), then staging and prod, the releases `v1.0.0-rc.1` and `v1.0.0` (approval point 3 for each), and a rollback drill.
 
 ## Who did what
 
@@ -212,7 +211,7 @@ legacy/                 the "before": .NET Framework 4.8 app and SQL Server scri
   src/                  Permits.Web (pages and GraphQL), Permits.Core (rules), Permits.Data (ADO.NET)
 modern/                 the "after": a placeholder until the conversion
 tests/                  one TypeScript package for every test
-  specs/                Playwright suites that run against either app: api, smoke (ui, a11y, security next)
+  specs/                Playwright suites that run against either app: api, ui, a11y, security, smoke
   specs-legacy/         legacy-only smoke checks
   src/drivers/          the page driver interface and its Web Forms implementation
   src/parity/           record and compare, normalizer, diff, approved differences

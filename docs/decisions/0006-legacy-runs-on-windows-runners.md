@@ -8,7 +8,7 @@ The legacy app is ASP.NET Web Forms on .NET Framework 4.8 with a GraphQL.NET 2.4
 
 ## Decision
 
-The `legacy` job in `.github/workflows/legacy.yml` runs on `windows-2022`. It starts on pushes that touch `legacy/**` or the workflow itself (test-only changes never start a Windows run), or on dispatch with `mode` set to `smoke` or `record`:
+The `legacy` job in `.github/workflows/legacy.yml` runs on `windows-2022`. It starts on pushes that touch `legacy/**` or the workflow itself (test-only changes never start a Windows run), which run in smoke mode, or on dispatch with `mode` set to `smoke` or `record`:
 
 ```
 gh workflow run legacy.yml --ref foundation -f mode=smoke
@@ -19,13 +19,14 @@ Steps, in order:
 1. Generate an `sa` password for the run and mask it in the log.
 2. Install SQL Server 2022 Developer with `potatoqualitee/mssqlsuite@v1.12` (`install: sqlengine`, `version: 2022`). It installs the default instance with TCP enabled on 1433, turns on SQL authentication and sets the `sa` password. A wait step then polls `localhost,1433` for up to 120 seconds.
 3. Install Node from `.nvmrc`, run `npm ci` and `npx playwright install chromium` in `tests/`.
-4. Reset the database: `npx tsx src/db/reset-legacy-db.ts --seed none` drops and recreates `Permits` and runs `legacy/db/*.sql` in name order.
+4. Reset the database: `npx tsx src/db/reset-legacy-db.ts --seed small` drops and recreates `Permits`, runs `legacy/db/*.sql` in name order and loads the small seed. The smoke specs open seeded applications picked from the catalog, so they need it.
 5. Build: `dotnet build legacy/Permits.Legacy.sln -c Release` with the SDK already on the image. The projects are SDK style and get the .NET Framework 4.8 reference assemblies from NuGet, so no targeting pack is needed.
 6. Write the connection string and `FixedToday` (`2026-10-15`) into `legacy/src/Permits.Web/web.config` of the runner's working copy with PowerShell. The committed file keeps a password-free default.
 7. Start IIS Express in the background: `iisexpress.exe /path:<workspace>\legacy\src\Permits.Web /port:8080 /clr:v4.0`.
 8. Wait up to 90 seconds for HTTP 200 on `/Default.aspx` (the first request compiles the pages).
-9. Run Playwright with `TARGET=legacy` and `BASE_URL=http://localhost:8080` (`npm run test:smoke`).
-10. Always upload `tests/playwright-report` and `tests/test-results`. On failure, print the IIS Express output.
+9. Smoke mode: run Playwright with `TARGET=legacy` and `BASE_URL=http://localhost:8080`: `npx playwright test --project read-only --project legacy-smoke --grep @smoke`. That is the shared smoke spec plus the Web Forms checks in `tests/specs-legacy/`. The `legacy-smoke` project exists only with `TARGET=legacy`, and naming it fails the step if it ever goes missing.
+10. Record mode, instead of step 9: empty `tests/baselines/legacy`, then twice reset the database with the small seed, warm up the app and record `specs/api specs/ui specs/a11y specs/security` (the second pass into a temporary folder). The two passes may differ only in `recordedAt`. The job then checks for at least 400 case files and `schema/introspection.json`, records Lighthouse and k6 reference numbers (a k6 threshold breach, exit code 99, does not fail the job; any other failure or a missing summary does) and uploads everything as the artifact `legacy-baselines`.
+11. Always upload `tests/playwright-report` and `tests/test-results`. On failure, print the IIS Express output.
 
 ## Fallbacks, in the order to try
 
@@ -34,7 +35,7 @@ Steps, in order:
 - **IIS Express missing or failing:** enable full IIS (`Install-WindowsFeature Web-Server,Web-Asp-Net45`) and create a site on port 8080 whose physical path is `legacy\src\Permits.Web`.
 - **IIS Express start step hangs:** drop the output redirection from `Start-Process` so no handle is shared with the step.
 - **Assembly binding failures:** add `bindingRedirect` entries to `web.config`. One for `Newtonsoft.Json` is already there because GraphQL.NET 2.4.0 references version 10.0.0.0 and the app ships 13.0.3.
-- **Stop rule:** if 10 Windows runs have not produced a green spike, stop the plan and take the failing logs to the owner.
+- **Stop rule:** if 10 Windows runs have not produced a green smoke run, stop the plan and take the failing logs to the owner.
 
 ## What is proven so far
 
@@ -43,7 +44,7 @@ On the Mac (2026-10-20):
 - `dotnet build legacy/Permits.Legacy.sln -c Release` succeeds and `legacy/src/Permits.Web/bin/` holds the app and its dependencies.
 - The reset script builds the database on SQL Server 2022 in Docker (`docker compose --profile legacy-db up -d mssql`).
 - `actionlint` reports nothing for the workflow.
-- Both spike tests pass against the local Mono preview described below.
+- The smoke step of the workflow passes against the local Mono preview described below, after a reset with the small seed: 15 passed, and 1 skipped (the health endpoint, which only the modern app has). After a reset without the seed, 5 of the legacy smoke checks fail, which is why step 4 loads it.
 
 Not proven: everything that happens only on Windows. That is the `mssqlsuite` install on the current runner image, the IIS Express path and its background start, the PowerShell edit of `web.config`, the .NET Framework runtime itself, and all timings.
 
@@ -54,9 +55,9 @@ Not proven: everything that happens only on Windows. That is the `mssqlsuite` in
 ```
 dotnet build legacy/Permits.Legacy.sln -c Release
 docker compose --profile legacy-db up -d --wait mssql
-(cd tests && npm run db:legacy:reset -- --seed none)
+(cd tests && npm run db:legacy:reset -- --seed small)
 docker compose --profile legacy-preview up -d --wait --build legacy-preview
-(cd tests && BASE_URL=http://localhost:8081 TARGET=legacy npm run test:smoke)
+(cd tests && TARGET=legacy BASE_URL=http://localhost:8081 npx playwright test --project read-only --project legacy-smoke --grep @smoke)
 ```
 
 The container copies the folder, writes the connection string and `FixedToday` into the copy of `web.config`, and serves it on port 8081. Mono renders Web Forms client IDs with automatic segments (`ctl00_MainContent_...`) that .NET Framework 4.x leaves out in Predictable mode, so the preview adds an HTTP module that strips them from HTML responses. The image runs natively (arm64 on Apple Silicon) because the amd64 Mono image crashes under emulation.

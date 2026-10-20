@@ -25,7 +25,7 @@ Every row must come from runs on the digest above. Evidence from another digest 
 | Accessibility | 0 serious or critical violations; no page worse than legacy; keyboard, reflow, landmarks green | | report link |
 | Security and console | Encoding, error leakage, headers, console checks green | | report link |
 | Lighthouse | Performance 0.80, accessibility 0.95, best practices 0.90 | | report link |
-| Mutation score | 85 or more (parity and gate code) | | report link |
+| Mutation score | 85 or more (parity, gate, API case and UI check code) | | report link |
 | Traceability, qa | 0 uncovered qa risks, 0 empty evidence | | matrix link |
 | staging stage | Green on this digest | | run link |
 | Migration validation | Counts, checksums, hazard records and foreign keys all equal | | report link |
