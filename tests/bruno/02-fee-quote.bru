@@ -1,0 +1,34 @@
+meta {
+  name: feeQuote
+  type: graphql
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query FeeQuote($permitTypeCode: String!, $areaSqM: Decimal!, $isSenior: Boolean!, $isNonProfit: Boolean!) {
+    feeQuote(permitTypeCode: $permitTypeCode, areaSqM: $areaSqM, isSenior: $isSenior, isNonProfit: $isNonProfit) {
+      feeAmount hstAmount totalAmount
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "permitTypeCode": "RENO",
+    "areaSqM": 50,
+    "isSenior": false,
+    "isNonProfit": false
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.feeQuote.totalAmount: gt 0
+}

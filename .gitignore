@@ -22,3 +22,4 @@ tests/allure-report/
 
 # Stryker runner artifacts
 tests/stryker-setup-*.js
+.lighthouseci/

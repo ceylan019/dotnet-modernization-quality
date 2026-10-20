@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Permits GraphQL",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

@@ -1,0 +1,40 @@
+meta {
+  name: introspection
+  type: graphql
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query Introspection {
+    __schema {
+      queryType { name }
+      mutationType { name }
+      subscriptionType { name }
+      types { ...FullType }
+      directives { name locations args { ...InputValue } }
+    }
+  }
+  fragment FullType on __Type {
+    kind
+    name
+    fields(includeDeprecated: true) { name args { ...InputValue } type { ...TypeRef } isDeprecated deprecationReason }
+    inputFields { ...InputValue }
+    interfaces { ...TypeRef }
+    enumValues(includeDeprecated: true) { name isDeprecated deprecationReason }
+    possibleTypes { ...TypeRef }
+  }
+  fragment InputValue on __InputValue { name type { ...TypeRef } defaultValue }
+  fragment TypeRef on __Type { kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name } } } } }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.__schema.queryType.name: eq Query
+}

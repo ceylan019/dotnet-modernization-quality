@@ -157,8 +157,91 @@ jobs:
           }
 
       - name: Run the smoke suite
+        if: inputs.mode != 'record'
         working-directory: tests
         run: npm run test:smoke
+
+      # Record mode: two passes against a freshly seeded database, then a diff that
+      # may only find recordedAt. Official baselines come from this job only.
+      - name: Reset the legacy database with the small seed (pass 1)
+        if: inputs.mode == 'record'
+        working-directory: tests
+        run: npx tsx src/db/reset-legacy-db.ts --seed small
+
+      - name: Warm up the legacy app after the reset (pass 1)
+        if: inputs.mode == 'record'
+        run: ./tests/ci/warm-up.ps1 -BaseUrl $env:BASE_URL
+
+      - name: Record legacy baselines (pass 1)
+        if: inputs.mode == 'record'
+        working-directory: tests
+        env:
+          PARITY_MODE: record
+        run: npx playwright test specs/api specs/ui specs/a11y specs/security
+
+      - name: Reset the legacy database with the small seed (pass 2)
+        if: inputs.mode == 'record'
+        working-directory: tests
+        run: npx tsx src/db/reset-legacy-db.ts --seed small
+
+      - name: Warm up the legacy app after the reset (pass 2)
+        if: inputs.mode == 'record'
+        run: ./tests/ci/warm-up.ps1 -BaseUrl $env:BASE_URL
+
+      - name: Record legacy baselines (pass 2, determinism check)
+        if: inputs.mode == 'record'
+        working-directory: tests
+        env:
+          PARITY_MODE: record
+          BASELINES_DIR: ${{ runner.temp }}/baselines-second
+        run: npx playwright test specs/api specs/ui specs/a11y specs/security
+
+      - name: Both passes must match except recordedAt
+        if: inputs.mode == 'record'
+        working-directory: tests
+        run: npx tsx src/parity/compare-baseline-dirs.ts baselines/legacy "$env:RUNNER_TEMP/baselines-second"
+
+      - name: Check the recorded baselines are complete
+        if: inputs.mode == 'record'
+        working-directory: tests
+        run: ./ci/check-baselines.ps1 -Root baselines/legacy -MinimumCases 400
+
+      - name: Lighthouse reference scores for the legacy pages
+        if: inputs.mode == 'record'
+        working-directory: tests
+        env:
+          LH_RUNS: "3"
+        run: npx --yes @lhci/cli@0.15.1 collect --config=lighthouse/lighthouserc.cjs
+
+      - name: Save the Lighthouse summary
+        if: inputs.mode == 'record'
+        working-directory: tests
+        run: |
+          New-Item -ItemType Directory -Force -Path baselines/legacy/lighthouse | Out-Null
+          npx tsx src/gate/lighthouse-evidence.ts summarize .lighthouseci baselines/legacy/lighthouse/summary.json
+
+      - uses: grafana/setup-k6-action@v1
+        if: inputs.mode == 'record'
+
+      - name: k6 reference run (30 s, 5 virtual users per scenario)
+        if: inputs.mode == 'record'
+        working-directory: tests
+        env:
+          DURATION: 30s
+          VUS: "5"
+          SUMMARY_FILE: baselines/legacy/perf/summary.json
+        run: |
+          New-Item -ItemType Directory -Force -Path baselines/legacy/perf | Out-Null
+          k6 run perf/journeys.js
+
+      - name: Upload the recorded baselines
+        if: inputs.mode == 'record' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: legacy-baselines
+          path: tests/baselines/legacy
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Show IIS Express output
         if: failure()

@@ -1,0 +1,37 @@
+meta {
+  name: searchApplications
+  type: graphql
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query Search($searchText: String, $status: ApplicationStatus, $page: Int, $pageSize: Int) {
+    searchApplications(searchText: $searchText, status: $status, page: $page, pageSize: $pageSize) {
+      totalCount page pageSize
+      items {
+        referenceNumber firstName lastName permitTypeCode permitTypeName
+        status submittedOn dueDate totalAmount
+      }
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "searchText": "tremblay",
+    "page": 1,
+    "pageSize": 5
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.searchApplications.totalCount: gt 0
+}

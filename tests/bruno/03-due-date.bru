@@ -1,0 +1,30 @@
+meta {
+  name: dueDate
+  type: graphql
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query DueDate($permitTypeCode: String!, $submittedOn: Date!) {
+    dueDate(permitTypeCode: $permitTypeCode, submittedOn: $submittedOn)
+  }
+}
+
+body:graphql:vars {
+  {
+    "permitTypeCode": "RENO",
+    "submittedOn": "2026-10-15"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.dueDate: isString
+}

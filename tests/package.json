@@ -19,6 +19,13 @@
     "gate": "tsx src/gate/gate-cli.ts",
     "seed:small": "tsx src/seed/generate.ts --size small --out seed-data",
     "seed:large": "tsx src/seed/generate.ts --size large --out reports/seed-large",
+    "perf": "k6 run perf/journeys.js",
+    "perf:evidence": "tsx src/gate/k6-evidence.ts",
+    "lighthouse": "npx --yes @lhci/cli@0.15.1 collect --config=lighthouse/lighthouserc.cjs",
+    "lighthouse:summarize": "tsx src/gate/lighthouse-evidence.ts summarize",
+    "lighthouse:evidence": "tsx src/gate/lighthouse-evidence.ts evidence",
+    "baselines:compare": "tsx src/parity/compare-baseline-dirs.ts",
+    "bruno": "npx --yes @usebruno/cli@3.0.3 run --env legacy",
     "risks:md": "tsx src/gate/risk-register-md.ts"
   },
   "dependencies": {

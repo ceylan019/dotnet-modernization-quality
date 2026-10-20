@@ -1,0 +1,36 @@
+meta {
+  name: application
+  type: graphql
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query Application($referenceNumber: String!) {
+    application(referenceNumber: $referenceNumber) {
+      referenceNumber
+      applicant { firstName lastName email phone isSenior isNonProfit }
+      permitType { code name baseFee ratePerSqM reviewBusinessDays }
+      siteAddress areaSqM description status submittedOn submittedAt dueDate
+      feeAmount hstAmount totalAmount lastUpdatedAt
+      history { fromStatus toStatus changedAt changedBy note }
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "referenceNumber": "PRM-2026-000001"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.application.referenceNumber: eq PRM-2026-000001
+}

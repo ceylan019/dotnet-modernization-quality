@@ -1,0 +1,23 @@
+meta {
+  name: permitTypes
+  type: graphql
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query PermitTypes {
+    permitTypes { code name baseFee ratePerSqM reviewBusinessDays }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.permitTypes.length: eq 6
+}

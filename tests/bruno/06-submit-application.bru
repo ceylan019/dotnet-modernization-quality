@@ -1,0 +1,44 @@
+meta {
+  name: submitApplication
+  type: graphql
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation Submit($input: ApplicationInput!) {
+    submitApplication(input: $input) { referenceNumber feeAmount totalAmount dueDate }
+  }
+}
+
+body:graphql:vars {
+  {
+    "input": {
+      "firstName": "Bruno",
+      "lastName": "Tester",
+      "email": "bruno@example.test",
+      "phone": "555-0100",
+      "isSenior": false,
+      "isNonProfit": false,
+      "permitTypeCode": "RENO",
+      "siteAddress": "1 Test Street",
+      "areaSqM": 40,
+      "description": "Bruno collection run"
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.submitApplication.referenceNumber: matches ^PRM-
+}
+
+script:post-response {
+  bru.setVar("submittedReference", res.body.data.submitApplication.referenceNumber);
+}

@@ -1,0 +1,39 @@
+meta {
+  name: changeStatus
+  type: graphql
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation ChangeStatus($referenceNumber: String!, $newStatus: ApplicationStatus!, $changedBy: String!, $note: String) {
+    changeStatus(referenceNumber: $referenceNumber, newStatus: $newStatus, changedBy: $changedBy, note: $note) {
+      referenceNumber
+      applicant { firstName lastName email phone isSenior isNonProfit }
+      permitType { code name baseFee ratePerSqM reviewBusinessDays }
+      siteAddress areaSqM description status submittedOn submittedAt dueDate
+      feeAmount hstAmount totalAmount lastUpdatedAt
+      history { fromStatus toStatus changedAt changedBy note }
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "referenceNumber": "{{submittedReference}}",
+    "newStatus": "UNDER_REVIEW",
+    "changedBy": "bruno",
+    "note": "picked up"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.errors: isUndefined
+  res.body.data.changeStatus.status: eq UNDER_REVIEW
+}
