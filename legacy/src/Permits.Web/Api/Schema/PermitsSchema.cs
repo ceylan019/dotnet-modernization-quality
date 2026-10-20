@@ -5,6 +5,7 @@ namespace Permits.Web.Api.Schema
         public PermitsSchema()
         {
             Query = new PermitsQuery();
+            Mutation = new PermitsMutation();
         }
     }
 }
