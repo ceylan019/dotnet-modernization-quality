@@ -87,7 +87,7 @@ it('lighthouse evidence treats a missing score as a miss', () => {
   expect(e.passed).toBe(false);
 });
 
-it('summarizeReports takes the median of repeated runs per page and skips incomplete reports', () => {
+it('summarizeReports takes the median of repeated runs per page and skips reports without a URL', () => {
   const report = (url: string, p: number) => ({
     requestedUrl: url,
     categories: { performance: { score: p }, accessibility: { score: 1 }, 'best-practices': { score: 0.9 } },
@@ -97,7 +97,7 @@ it('summarizeReports takes the median of repeated runs per page and skips incomp
     report('http://x/a', 0.6),
     report('http://x/a', 0.9),
     report('http://x/a', 0.7),
-    { requestedUrl: 'http://x/c', categories: { performance: { score: null } } },
+    { categories: { performance: { score: 1 } } },
   ]);
   expect(summary.pages.map((p) => p.url)).toEqual(['http://x/a', 'http://x/b']);
   expect(summary.pages[0]).toEqual({ url: 'http://x/a', performance: 0.7, accessibility: 1, bestPractices: 0.9 });
@@ -111,4 +111,12 @@ it('summarizeDirectory reads only lhr files', () => {
   );
   writeFileSync(join(dir, 'manifest.json'), '[]');
   expect(summarizeDirectory(dir).pages).toHaveLength(1);
+});
+
+it('summarizeReports keeps a page with null or missing scores as NaN and the evidence counts it as a miss', () => {
+  const summary = summarizeReports([{ requestedUrl: 'http://x/c', categories: { performance: { score: null } } }]);
+  expect(summary.pages).toHaveLength(1);
+  expect(summary.pages[0]!.performance).toBeNaN();
+  expect(summary.pages[0]!.accessibility).toBeNaN();
+  expect(lighthouseEvidence(summary)).toMatchObject({ passed: false, examined: 1 });
 });

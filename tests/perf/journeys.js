@@ -16,16 +16,29 @@ const SEARCH = 'query Search($searchText: String, $page: Int, $pageSize: Int) { 
 const FEE_QUOTE = 'query FeeQuote($permitTypeCode: String!, $areaSqM: Decimal!, $isSenior: Boolean!, $isNonProfit: Boolean!) { feeQuote(permitTypeCode: $permitTypeCode, areaSqM: $areaSqM, isSenior: $isSenior, isNonProfit: $isNonProfit) { feeAmount hstAmount totalAmount } }';
 const APPLICATION = 'query Application($referenceNumber: String!) { application(referenceNumber: $referenceNumber) { referenceNumber status totalAmount history { toStatus } } }';
 
-function scenario(exec) {
-  return { executor: 'constant-vus', vus: VUS, duration: DURATION, exec };
+// VUS is the TOTAL number of virtual users. It is split across the three scenarios in
+// order (search, feeQuote, applicationByReference): each gets floor(VUS / 3) and the
+// remainder goes to the first scenarios. VUS=5 gives 2, 2, 1. A scenario that would get
+// zero users (VUS below 3) is left out.
+function split(total) {
+  const base = Math.floor(total / 3);
+  const extra = total % 3;
+  return [base + (extra > 0 ? 1 : 0), base + (extra > 1 ? 1 : 0), base];
 }
 
+const [searchVus, feeQuoteVus, applicationVus] = split(VUS);
+
+function scenario(exec, vus) {
+  return { executor: 'constant-vus', vus, duration: DURATION, exec };
+}
+
+const scenarios = {};
+if (searchVus > 0) scenarios.search = scenario('search', searchVus);
+if (feeQuoteVus > 0) scenarios.feeQuote = scenario('feeQuote', feeQuoteVus);
+if (applicationVus > 0) scenarios.applicationByReference = scenario('applicationByReference', applicationVus);
+
 export const options = {
-  scenarios: {
-    search: scenario('search'),
-    feeQuote: scenario('feeQuote'),
-    applicationByReference: scenario('applicationByReference'),
-  },
+  scenarios,
   thresholds: {
     http_req_duration: ['p(95)<500'],
     http_req_failed: ['rate<0.01'],

@@ -36,6 +36,31 @@ export interface DirComparison {
   onlyInFirst: string[];
   onlyInSecond: string[];
   different: string[];
+  // First differing JSON path per different file, with both values.
+  firstDifferences: Record<string, { path: string; first: unknown; second: unknown }>;
+}
+
+function firstDifference(a: unknown, b: unknown, path = '$'): { path: string; first: unknown; second: unknown } | undefined {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const d = firstDifference(a[i], b[i], `${path}[${i}]`);
+      if (d) return d;
+    }
+    return undefined;
+  }
+  if (a !== null && b !== null && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && !Array.isArray(b)) {
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+    for (const k of keys) {
+      const d = firstDifference((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], `${path}.${k}`);
+      if (d) return d;
+    }
+    return undefined;
+  }
+  return JSON.stringify(a) === JSON.stringify(b) ? undefined : { path, first: a, second: b };
+}
+
+function parseWithoutRecordedAt(text: string): unknown {
+  return JSON.parse(withoutRecordedAt(text));
 }
 
 // Two record passes must agree on everything except recordedAt. An empty pair of folders never counts as agreement.
@@ -43,11 +68,18 @@ export function compareBaselineDirs(first: string, second: string): DirCompariso
   const a = new Set(listJson(first));
   const b = new Set(listJson(second));
   const both = [...a].filter((f) => b.has(f)).sort();
+  const different = both.filter((f) => withoutRecordedAt(readFileSync(join(first, f), 'utf8')) !== withoutRecordedAt(readFileSync(join(second, f), 'utf8')));
+  const firstDifferences: DirComparison['firstDifferences'] = {};
+  for (const f of different) {
+    const d = firstDifference(parseWithoutRecordedAt(readFileSync(join(first, f), 'utf8')), parseWithoutRecordedAt(readFileSync(join(second, f), 'utf8')));
+    if (d) firstDifferences[f] = d;
+  }
   return {
     files: both.length,
     onlyInFirst: [...a].filter((f) => !b.has(f)).sort(),
     onlyInSecond: [...b].filter((f) => !a.has(f)).sort(),
-    different: both.filter((f) => withoutRecordedAt(readFileSync(join(first, f), 'utf8')) !== withoutRecordedAt(readFileSync(join(second, f), 'utf8'))),
+    different,
+    firstDifferences,
   };
 }
 
@@ -60,7 +92,7 @@ function main(): void {
   const [first, second] = positionals;
   if (!first || !second) throw new Error('Usage: tsx src/parity/compare-baseline-dirs.ts <first dir> <second dir>');
   const result = compareBaselineDirs(first, second);
-  console.log(JSON.stringify({ files: result.files, onlyInFirst: result.onlyInFirst, onlyInSecond: result.onlyInSecond, different: result.different }, null, 2));
+  console.log(JSON.stringify({ files: result.files, onlyInFirst: result.onlyInFirst, onlyInSecond: result.onlyInSecond, different: result.different, firstDifferences: result.firstDifferences }, null, 2));
   process.exitCode = isDeterministic(result) ? 0 : 1;
 }
 

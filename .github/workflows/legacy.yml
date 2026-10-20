@@ -206,6 +206,15 @@ jobs:
         working-directory: tests
         run: ./ci/check-baselines.ps1 -Root baselines/legacy -MinimumCases 400
 
+      - name: Upload the second record pass for diagnosis
+        if: inputs.mode == 'record' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: legacy-baselines-second
+          path: ${{ runner.temp }}/baselines-second
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Lighthouse reference scores for the legacy pages
         if: inputs.mode == 'record'
         working-directory: tests
@@ -223,8 +232,12 @@ jobs:
       - uses: grafana/setup-k6-action@v1
         if: inputs.mode == 'record'
 
-      - name: k6 reference run (30 s, 5 virtual users per scenario)
+      # The legacy numbers are reference only, so a threshold breach must not fail the
+      # record job. continue-on-error applies to this step only; the summary file is
+      # still written and carries the threshold results.
+      - name: k6 reference run (30 s, 5 virtual users in total)
         if: inputs.mode == 'record'
+        continue-on-error: true
         working-directory: tests
         env:
           DURATION: 30s

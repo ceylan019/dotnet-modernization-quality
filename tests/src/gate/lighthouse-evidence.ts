@@ -27,6 +27,7 @@ interface Lhr {
 }
 
 function median(values: number[]): number {
+  if (values.some((v) => Number.isNaN(v))) return Number.NaN;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
@@ -36,11 +37,13 @@ function median(values: number[]): number {
 export function summarizeReports(reports: Lhr[]): LighthouseSummary {
   const byUrl = new Map<string, PageScores[]>();
   for (const r of reports) {
-    const performance = r.categories?.performance?.score;
-    const accessibility = r.categories?.accessibility?.score;
-    const bestPractices = r.categories?.['best-practices']?.score;
+    // A missing or null score becomes NaN so the page stays in the summary and counts as a miss.
+    const score = (v: number | null | undefined): number => (typeof v === 'number' ? v : Number.NaN);
+    const performance = score(r.categories?.performance?.score);
+    const accessibility = score(r.categories?.accessibility?.score);
+    const bestPractices = score(r.categories?.['best-practices']?.score);
     const url = r.requestedUrl ?? r.finalUrl;
-    if (!url || typeof performance !== 'number' || typeof accessibility !== 'number' || typeof bestPractices !== 'number') continue;
+    if (!url) continue;
     byUrl.set(url, [...(byUrl.get(url) ?? []), { url, performance, accessibility, bestPractices }]);
   }
   const pages = [...byUrl.entries()]
@@ -87,6 +90,7 @@ function main(): void {
   const [command, input, output] = positionals;
   if (command === 'summarize' && input && output) {
     const summary = summarizeDirectory(input);
+    if (summary.pages.length === 0) throw new Error(`No Lighthouse reports with a requested URL found in ${input}`);
     writeFileSync(output, `${JSON.stringify(summary, null, 2)}\n`);
     console.log(JSON.stringify(summary, null, 2));
     return;

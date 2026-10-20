@@ -29,6 +29,7 @@ it('reports a changed value', () => {
   put(b, 'api/x.json', { recordedAt: 'b', normalized: { n: 2 } });
   const result = compareBaselineDirs(a, b);
   expect(result.different).toEqual(['api/x.json']);
+  expect(result.firstDifferences['api/x.json']).toEqual({ path: '$.normalized.n', first: 1, second: 2 });
   expect(isDeterministic(result)).toBe(false);
 });
 
