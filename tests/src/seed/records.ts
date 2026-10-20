@@ -203,7 +203,7 @@ class Builder {
       id,
       firstName,
       lastName,
-      email: spec.email === undefined ? `${handle}@example.ca` : spec.email,
+      email: spec.email === undefined ? `${handle}@example.com` : spec.email,
       phone: spec.phone === undefined ? `613-555-${String(int(0, 9999)).padStart(4, '0')}` : spec.phone,
       isSenior: spec.isSenior ?? false,
       isNonProfit: spec.isNonProfit ?? false,
