@@ -8,7 +8,8 @@ process.env.DOCS_DIR = resolve('../docs');
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',
-  vitest: { configFile: 'vitest.config.ts', dir: '.' },
+  // Unit tests only (see vitest.unit.config.ts): the db/ tests need SQL Server and reset Permits.
+  vitest: { configFile: 'vitest.unit.config.ts', dir: '.' },
   checkers: ['typescript'],
   tsconfigFile: 'tsconfig.json',
   // src/ui/browser.ts is left out: its code runs inside the page (page.evaluate), never under

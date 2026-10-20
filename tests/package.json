@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "db:legacy:reset": "tsx --env-file-if-exists=../.env src/db/reset-legacy-db.ts",
-    "test:unit": "vitest run unit/",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
     "test:db": "vitest run db/",
     "test:e2e": "playwright test",
     "test:smoke": "playwright test --grep @smoke",
