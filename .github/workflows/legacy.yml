@@ -94,9 +94,11 @@ jobs:
           npm ci
           npx playwright install chromium
 
-      - name: Reset the legacy database
+      # The legacy smoke specs open seeded applications picked from the catalog, so smoke
+      # needs the small seed. Record mode reseeds before each pass anyway.
+      - name: Reset the legacy database with the small seed
         working-directory: tests
-        run: npx tsx src/db/reset-legacy-db.ts --seed none
+        run: npx tsx src/db/reset-legacy-db.ts --seed small
 
       # If dotnet cannot build the net48 projects here, use microsoft/setup-msbuild
       # and run: msbuild legacy\Permits.Legacy.sln /restore /p:Configuration=Release
@@ -165,6 +167,15 @@ jobs:
 
       # Record mode: two passes against a freshly seeded database, then a diff that
       # may only find recordedAt. Official baselines come from this job only.
+      # Pass 1 starts from an empty folder, so a case that no longer exists cannot leave a
+      # stale file behind that the diff would report as nondeterminism.
+      - name: Start from an empty baselines folder
+        if: inputs.mode == 'record'
+        working-directory: tests
+        run: |
+          if (Test-Path baselines/legacy) { Remove-Item -Recurse -Force baselines/legacy }
+          New-Item -ItemType Directory -Force -Path baselines/legacy | Out-Null
+
       - name: Reset the legacy database with the small seed (pass 1)
         if: inputs.mode == 'record'
         working-directory: tests
@@ -234,12 +245,11 @@ jobs:
       - uses: grafana/setup-k6-action@v1
         if: inputs.mode == 'record'
 
-      # The legacy numbers are reference only, so a threshold breach must not fail the
-      # record job. continue-on-error applies to this step only; the summary file is
-      # still written and carries the threshold results.
+      # The legacy numbers are reference only, so a threshold breach (k6 exit code 99) does
+      # not fail the record job; the summary file still carries the threshold results. Any
+      # other non-zero exit code, or a missing summary file, fails the step.
       - name: k6 reference run (30 s, 5 virtual users in total)
         if: inputs.mode == 'record'
-        continue-on-error: true
         working-directory: tests
         env:
           DURATION: 30s
@@ -247,7 +257,17 @@ jobs:
           SUMMARY_FILE: baselines/legacy/perf/summary.json
         run: |
           New-Item -ItemType Directory -Force -Path baselines/legacy/perf | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
           k6 run perf/journeys.js
+          $k6Exit = $LASTEXITCODE
+          if (-not (Test-Path -LiteralPath $env:SUMMARY_FILE)) {
+            throw "k6 exited with code $k6Exit and wrote no $env:SUMMARY_FILE"
+          }
+          if ($k6Exit -eq 99) {
+            Write-Output "k6 thresholds breached (exit code 99). Reference run only, so the step passes."
+            exit 0
+          }
+          exit $k6Exit
 
       - name: Upload the recorded baselines
         if: inputs.mode == 'record' && always()

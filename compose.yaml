@@ -1,3 +1,6 @@
+# Compose interpolates the whole file whatever the profile, so every command needs both
+# MSSQL_SA_PASSWORD and POSTGRES_PASSWORD: from .env locally, while the pipeline sets a real
+# POSTGRES_PASSWORD and a throwaway MSSQL_SA_PASSWORD (it starts no legacy service).
 services:
   mssql:
     image: mcr.microsoft.com/mssql/server:2022-latest

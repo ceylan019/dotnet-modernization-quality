@@ -114,6 +114,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # First, so that every later docker compose call, teardown included, can read compose.yaml.
+      # Alphanumeric only: the password is interpolated unquoted into a connection string.
+      # MSSQL_SA_PASSWORD is a throwaway that no service here uses: compose.yaml requires it for
+      # the whole file, and keeping that requirement is what guards the legacy services.
+      - name: Generate the database passwords for this run
+        run: |
+          password="Ci$(openssl rand -hex 16)"
+          unused="Ci$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          echo "::add-mask::$unused"
+          echo "POSTGRES_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "MSSQL_SA_PASSWORD=$unused" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -134,13 +147,6 @@ jobs:
             echo "::error::Loaded image $actual does not match the built image '$EXPECTED_DIGEST'"
             exit 1
           fi
-
-      # Alphanumeric only: the password is interpolated unquoted into a connection string.
-      - name: Generate the database password for this run
-        run: |
-          password="Ci$(openssl rand -hex 16)"
-          echo "::add-mask::$password"
-          echo "POSTGRES_PASSWORD=$password" >> "$GITHUB_ENV"
 
       - name: Start the app and database
         env:
@@ -166,21 +172,24 @@ jobs:
         working-directory: tests
         run: npx playwright install --with-deps chromium
 
+      # One html report folder per invocation: the reporter empties its folder on every run.
       - name: Smoke and contract tests
         shell: bash
         working-directory: tests
         run: |
           status=0
-          npx playwright test --grep @smoke || status=$?
-          npx playwright test specs/api/contract.spec.ts || status=$?
+          PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/smoke npx playwright test --grep @smoke || status=$?
+          PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/contract npx playwright test specs/api/contract.spec.ts || status=$?
           exit "$status"
 
-      - name: Upload Playwright report
+      - name: Upload Playwright reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-dev
-          path: tests/playwright-report
+          path: |
+            tests/playwright-report/smoke
+            tests/playwright-report/contract
           if-no-files-found: ignore
           retention-days: 7
 
@@ -203,6 +212,19 @@ jobs:
       PARITY_MODE: compare
     steps:
       - uses: actions/checkout@v7
+
+      # First, so that every later docker compose call, teardown included, can read compose.yaml.
+      # Alphanumeric only: the password is interpolated unquoted into a connection string.
+      # MSSQL_SA_PASSWORD is a throwaway that no service here uses: compose.yaml requires it for
+      # the whole file, and keeping that requirement is what guards the legacy services.
+      - name: Generate the database passwords for this run
+        run: |
+          password="Ci$(openssl rand -hex 16)"
+          unused="Ci$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          echo "::add-mask::$unused"
+          echo "POSTGRES_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "MSSQL_SA_PASSWORD=$unused" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v7
         with:
@@ -229,12 +251,6 @@ jobs:
             echo "::error::Loaded image $actual does not match the built image '$EXPECTED_DIGEST'"
             exit 1
           fi
-
-      - name: Generate the database password for this run
-        run: |
-          password="Ci$(openssl rand -hex 16)"
-          echo "::add-mask::$password"
-          echo "POSTGRES_PASSWORD=$password" >> "$GITHUB_ENV"
 
       - name: Start the app and database
         env:
