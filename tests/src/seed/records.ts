@@ -37,6 +37,7 @@ export const CATEGORY_NAMES = [
   'statusInfoRequested',
   'statusRejected',
   'statusSubmitted',
+  'inactivePermitType',
 ] as const;
 
 export type CategoryName = (typeof CATEGORY_NAMES)[number];
@@ -499,6 +500,11 @@ export function buildDataset(applicationCount: number): Dataset {
       .slice(0, STATUS_CATEGORY_LIMIT)
       .map((a) => a.referenceNumber);
   }
+
+  builder.categories.inactivePermitType = builder.applications
+    .filter((a) => a.permitTypeCode === 'FENCE' && a.submittedOn <= FIXED_TODAY)
+    .slice(0, STATUS_CATEGORY_LIMIT)
+    .map((a) => a.referenceNumber);
 
   return {
     applicants: builder.applicants,

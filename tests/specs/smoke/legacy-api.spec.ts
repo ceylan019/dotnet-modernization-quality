@@ -63,6 +63,15 @@ test.describe('legacy GraphQL API', { tag: '@smoke' }, () => {
     expect(data.application.history.length).toBeGreaterThan(0);
   });
 
+  test('application of an inactive permit type has a null permitType', async ({ request }) => {
+    const reference = catalog.categories.inactivePermitType[0];
+    const data = await run(new GraphQLClient(request, '/graphql'), APPLICATION, {
+      referenceNumber: reference,
+    });
+    expect(data.application.referenceNumber).toBe(reference);
+    expect(data.application.permitType).toBeNull();
+  });
+
   test('searchApplications', async ({ request }) => {
     const data = await run(new GraphQLClient(request, '/graphql'), SEARCH, {
       searchText: null,

@@ -46,7 +46,11 @@ mutation Submit($input: ApplicationInput!) {
 export const CHANGE_STATUS = `
 mutation ChangeStatus($referenceNumber: String!, $newStatus: ApplicationStatus!, $changedBy: String!, $note: String) {
   changeStatus(referenceNumber: $referenceNumber, newStatus: $newStatus, changedBy: $changedBy, note: $note) {
-    referenceNumber status lastUpdatedAt
+    referenceNumber
+    applicant { firstName lastName email phone isSenior isNonProfit }
+    permitType { code name baseFee ratePerSqM reviewBusinessDays }
+    siteAddress areaSqM description status submittedOn submittedAt dueDate
+    feeAmount hstAmount totalAmount lastUpdatedAt
     history { fromStatus toStatus changedAt changedBy note }
   }
 }`;
