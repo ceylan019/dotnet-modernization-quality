@@ -1,0 +1,37 @@
+{
+  "suites": [
+    {
+      "title": "parity/fee.spec.ts",
+      "file": "parity/fee.spec.ts",
+      "specs": [
+        {
+          "title": "fee parity",
+          "ok": true,
+          "tags": [
+            "RISK-FEE-01",
+            "parity"
+          ],
+          "file": "parity/fee.spec.ts",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "status": "expected",
+              "annotations": [
+                {
+                  "type": "baseline-recorded",
+                  "description": "fee/fee-reno-10.70-senior"
+                }
+              ],
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "suites": []
+    }
+  ]
+}

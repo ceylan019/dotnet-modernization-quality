@@ -18,7 +18,7 @@ it('reads a real smoke report: file, title, passed status and @ tags', () => {
   const results = parsePlaywrightReport(fixture('playwright-smoke.json'));
   expect(results).toHaveLength(3);
   expect(results[0]).toEqual({
-    title: 'permitTypes', file: 'smoke/legacy-api.spec.ts', status: 'passed', tags: ['@smoke'], evidence: [],
+    title: 'permitTypes', file: 'smoke/legacy-api.spec.ts', status: 'passed', tags: ['@smoke'], evidence: [], baselineRecorded: false,
   });
   expect(results.map((r) => r.title)).toEqual(['permitTypes', 'feeQuote', 'each page loads with HTTP 200']);
 });
@@ -147,4 +147,10 @@ it('reads evidence sorted by name even when file names sort differently', () => 
 it('keeps an evidence annotation with an empty name but a count', () => {
   const [r] = parsePlaywrightReport(report([one('expected', 'passed', [{ type: 'evidence', description: '=5' }])]));
   expect(r!.evidence).toEqual([{ name: '', examined: 5 }]);
+});
+
+it('flags tests that carry a baseline-recorded annotation', () => {
+  const results = parsePlaywrightReport(fixture('playwright-record-mode.json'));
+  expect(results.map((r) => r.baselineRecorded)).toEqual([true]);
+  expect(parsePlaywrightReport(fixture('playwright-smoke.json')).every((r) => !r.baselineRecorded)).toBe(true);
 });

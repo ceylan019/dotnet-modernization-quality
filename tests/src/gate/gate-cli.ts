@@ -36,7 +36,11 @@ export function runGateCli(
   argv: string[], env: Record<string, string | undefined>,
 ): { output: string; exitCode: number } {
   const args = parseGateArgs(argv);
-  const gate = evaluateGate(loadRisks(args.risks), readPlaywrightResults(args.playwright), readCheckEvidence(args.evidence), args.stage);
+  const results = readPlaywrightResults(args.playwright);
+  if (results.some((r) => r.baselineRecorded)) {
+    return { output: 'Refusing to gate a record mode run', exitCode: 1 };
+  }
+  const gate = evaluateGate(loadRisks(args.risks), results, readCheckEvidence(args.evidence), args.stage);
   const output = renderGateMarkdown(args.stage, gate);
   mkdirSync(args.out, { recursive: true });
   writeFileSync(join(args.out, 'traceability.json'), `${JSON.stringify({ stage: args.stage, ...gate }, null, 2)}\n`);

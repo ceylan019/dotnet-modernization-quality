@@ -6,6 +6,8 @@ export interface TestResult {
   status: 'passed' | 'failed' | 'skipped';
   tags: string[];
   evidence: { name: string; examined: number }[];
+  // True when the test recorded a baseline (record mode), so its pass proves nothing.
+  baselineRecorded: boolean;
 }
 
 interface JsonTest {
@@ -44,6 +46,7 @@ function collect(suite: JsonSuite, out: TestResult[]): void {
         status: toStatus(t),
         tags: (spec.tags ?? []).map((tag) => (tag.startsWith('@') ? tag : `@${tag}`)),
         evidence: toEvidence(t.annotations),
+        baselineRecorded: (t.annotations ?? []).some((a) => a.type === 'baseline-recorded'),
       });
     }
   }

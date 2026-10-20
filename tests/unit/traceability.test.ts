@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -12,7 +12,7 @@ const risk = (id: string, stage: Risk['stage'] = 'qa'): Risk => ({
   id, title: `title of ${id}`, area: 'Area', likelihood: 2, impact: 2, detection: 'd', stage, status: 'open',
 });
 const result = (over: Partial<TestResult> = {}): TestResult => ({
-  title: 'a test', file: 'f.spec.ts', status: 'passed', tags: ['@RISK-A-01'], evidence: [], ...over,
+  title: 'a test', file: 'f.spec.ts', status: 'passed', tags: ['@RISK-A-01'], evidence: [], baselineRecorded: false, ...over,
 });
 const check = (over: Partial<CheckEvidence> = {}): CheckEvidence => ({
   name: 'a check', risks: ['RISK-A-01'], passed: true, examined: 5, detail: '', ...over,
@@ -265,4 +265,14 @@ it('CLI creates a nested output directory and a clear error names the unreadable
   runGateCli(a, {});
   expect(existsSync(join(nested, 'traceability.json'))).toBe(true);
   expect(() => runGateCli(['--stage', 'qa', '--playwright', join(c.dir, 'nope.json'), '--risks', c.risksFile], {})).toThrow(/nope\.json/);
+});
+
+it('CLI refuses to gate a record mode run and writes nothing', () => {
+  const c = cliDir();
+  copyFileSync('unit/fixtures/playwright-record-mode.json', c.pw);
+  const summary = join(c.dir, 'summary.md');
+  const run = runGateCli(args(c), { GITHUB_STEP_SUMMARY: summary });
+  expect(run).toEqual({ output: 'Refusing to gate a record mode run', exitCode: 1 });
+  expect(existsSync(join(c.out, 'traceability.json'))).toBe(false);
+  expect(existsSync(summary)).toBe(false);
 });
