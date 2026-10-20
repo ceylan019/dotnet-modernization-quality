@@ -37,3 +37,34 @@ services:
     depends_on:
       mssql:
         condition: service_healthy
+
+  # The modern stack has its own profile so legacy commands such as
+  # `docker compose --profile legacy-db up -d mssql` never start it. Naming the
+  # services explicitly (`docker compose up -d app postgres`) enables them.
+  postgres:
+    image: postgres:17
+    profiles: [modern]
+    environment:
+      POSTGRES_DB: permits
+      POSTGRES_USER: permits
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U permits -d permits"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    image: ${APP_IMAGE:-permits-modern:local}
+    build: ./modern
+    profiles: [modern]
+    environment:
+      ConnectionStrings__PermitsDb: Host=postgres;Port=5432;Database=permits;Username=permits;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}
+      App__FixedToday: "2026-10-15"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
