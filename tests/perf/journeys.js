@@ -9,7 +9,8 @@ const VUS = Number(__ENV.VUS || 5);
 const SUMMARY_FILE = __ENV.SUMMARY_FILE || 'summary.json';
 
 const SEARCH_TERMS = ['tremblay', 'gagnon', 'macdonald', 'roy', 'belanger', 'PRM-2026'];
-const PERMIT_CODES = ['RENO', 'NEWB', 'DEMO'];
+// The active permit types in legacy/db/04-reference-data.sql (FENCE is inactive).
+const PERMIT_CODES = ['RENO', 'DECK', 'SIGN', 'PATIO', 'DEMO', 'EVENT'];
 const HEADERS = { headers: { 'Content-Type': 'application/json' } };
 
 const SEARCH = 'query Search($searchText: String, $page: Int, $pageSize: Int) { searchApplications(searchText: $searchText, page: $page, pageSize: $pageSize) { totalCount items { referenceNumber status totalAmount } } }';
