@@ -1,8 +1,340 @@
+# Delivery pipeline for the modern app: build, dev, qa.
+#
+# EXPECTED RED BEFORE THE CONVERSION: until the modern app replaces the placeholder
+# (every route but /healthz answers 501), the dev and qa jobs are expected to fail on
+# the smoke, contract and parity checks. Build should be green, and dev and qa should
+# run to completion with the gate summary rendered. A red dev or qa is not a broken pipeline.
+#
+# Staging and prod stages come in Plan 2. No `environment:` keys on purpose: free
+# private repositories have no environments (the Pages job below is skipped there).
 name: pipeline
+
 on:
+  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FIXED_TODAY: "2026-10-15"
+  IMAGE_TAG: permits-modern:local
+
 jobs:
-  stub:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
     steps:
-      - run: echo "stub; the real workflow lives on the foundation branch"
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Build the modern solution
+        run: dotnet build modern/Permits.Modern.sln --configuration Release
+
+      # The solution has no test project yet; dotnet test succeeds when there is nothing to run.
+      - name: Test the modern solution
+        run: dotnet test modern/Permits.Modern.sln --configuration Release --no-build
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: tests
+        run: npm run typecheck
+
+      - name: Lint
+        working-directory: tests
+        run: npm run lint
+
+      - name: Unit tests
+        working-directory: tests
+        run: npm run test:unit
+
+      - name: Mutation tests
+        working-directory: tests
+        run: npm run test:mutation
+
+      # Evidence for RISK-TEST-01. Runs even when the threshold step above failed, so the gate can still see it.
+      - name: Mutation evidence
+        if: ${{ !cancelled() }}
+        working-directory: tests
+        run: npx tsx src/gate/mutation-evidence.ts reports/mutation/mutation.json --out reports/evidence
+
+      - name: Upload evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence
+          path: tests/reports/evidence
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Build the image
+        run: docker build --tag "$IMAGE_TAG" modern
+
+      - name: Save the image
+        id: image
+        run: |
+          docker save "$IMAGE_TAG" --output image.tar
+          echo "digest=$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the image
+        uses: actions/upload-artifact@v7
+        with:
+          name: image
+          path: image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  dev:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET: modern
+      BASE_URL: http://localhost:8080
+      TEST_STAGE: dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+
+      - name: Load and verify the image
+        env:
+          EXPECTED_DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          docker load --input image.tar
+          actual="$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG")"
+          if [ -z "$EXPECTED_DIGEST" ] || [ "$actual" != "$EXPECTED_DIGEST" ]; then
+            echo "::error::Loaded image $actual does not match the built image '$EXPECTED_DIGEST'"
+            exit 1
+          fi
+
+      # Alphanumeric only: the password is interpolated unquoted into a connection string.
+      - name: Generate the database password for this run
+        run: |
+          password="Ci$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          echo "POSTGRES_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: Start the app and database
+        env:
+          APP_IMAGE: ${{ env.IMAGE_TAG }}
+        run: docker compose up -d --no-build app postgres
+
+      # The aspnet image has no curl, so the runner host polls.
+      - name: Wait for the app
+        run: |
+          for _ in $(seq 1 60); do
+            if curl --silent --fail "$BASE_URL/healthz" >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::The app did not become healthy within 120 seconds"
+          docker compose logs app postgres
+          exit 1
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke and contract tests
+        shell: bash
+        working-directory: tests
+        run: |
+          status=0
+          npx playwright test --grep @smoke || status=$?
+          npx playwright test specs/api/contract.spec.ts || status=$?
+          exit "$status"
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-dev
+          path: tests/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Show app logs on failure
+        if: failure()
+        run: docker compose logs app postgres
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
+
+  qa:
+    needs: [build, dev]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET: modern
+      BASE_URL: http://localhost:8080
+      TEST_STAGE: qa
+      PARITY_MODE: compare
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: evidence
+          path: tests/reports/evidence
+
+      - name: Load and verify the image
+        env:
+          EXPECTED_DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          docker load --input image.tar
+          actual="$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG")"
+          if [ -z "$EXPECTED_DIGEST" ] || [ "$actual" != "$EXPECTED_DIGEST" ]; then
+            echo "::error::Loaded image $actual does not match the built image '$EXPECTED_DIGEST'"
+            exit 1
+          fi
+
+      - name: Generate the database password for this run
+        run: |
+          password="Ci$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          echo "POSTGRES_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: Start the app and database
+        env:
+          APP_IMAGE: ${{ env.IMAGE_TAG }}
+        run: docker compose up -d --no-build app postgres
+
+      - name: Wait for the app
+        run: |
+          for _ in $(seq 1 60); do
+            if curl --silent --fail "$BASE_URL/healthz" >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::The app did not become healthy within 120 seconds"
+          docker compose logs app postgres
+          exit 1
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Full suite against the legacy baselines
+        working-directory: tests
+        run: npx playwright test specs/
+
+      # Always renders the gate summary; the step fails the job when the gate does.
+      - name: Quality gate
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: tests
+        run: |
+          npx tsx src/gate/gate-cli.ts --stage qa --playwright reports/playwright.json --evidence reports/evidence | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-qa
+          path: |
+            tests/playwright-report
+            tests/reports/playwright.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Allure results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-results
+          path: tests/allure-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload traceability
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: traceability
+          path: tests/reports/traceability.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Show app logs on failure
+        if: failure()
+        run: docker compose logs app postgres
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
+
+  # Public repositories only. Skipped (not failed) while the repository is private.
+  # The environment key is required by deploy-pages and is never evaluated when the job is skipped.
+  pages:
+    needs: qa
+    if: ${{ !cancelled() && needs.qa.result != 'skipped' && github.event.repository.private == false && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: allure-results
+          path: allure-results
+
+      - name: Generate the Allure report
+        run: npx --yes allure@3 generate allure-results --output allure-report
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: allure-report
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
