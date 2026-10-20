@@ -1,9 +1,10 @@
 # Delivery pipeline for the modern app: build, dev, qa.
 #
 # EXPECTED RED BEFORE THE CONVERSION: until the modern app replaces the placeholder
-# (every route but /healthz answers 501), the dev and qa jobs are expected to fail on
-# the smoke, contract and parity checks. Build should be green, and dev and qa should
-# run to completion with the gate summary rendered. A red dev or qa is not a broken pipeline.
+# (every route but /healthz answers 501), build is green, dev fails on the smoke and
+# contract checks, and qa is skipped by design (qa needs dev: promotion is strict).
+# A red dev with a skipped qa is not a broken pipeline. How the qa gate behaves against
+# the placeholder is shown by the documented local equivalent run (see docs/quality).
 #
 # Staging and prod stages come in Plan 2. No `environment:` keys on purpose: free
 # private repositories have no environments (the Pages job below is skipped there).
@@ -189,7 +190,7 @@ jobs:
 
       - name: Stop the stack
         if: always()
-        run: docker compose down --volumes
+        run: docker compose --profile modern down --volumes
 
   qa:
     needs: [build, dev]
@@ -305,9 +306,10 @@ jobs:
 
       - name: Stop the stack
         if: always()
-        run: docker compose down --volumes
+        run: docker compose --profile modern down --volumes
 
   # Public repositories only. Skipped (not failed) while the repository is private.
+  # Publishes even when qa failed on purpose: the report is evidence either way.
   # The environment key is required by deploy-pages and is never evaluated when the job is skipped.
   pages:
     needs: qa
